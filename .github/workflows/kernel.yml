@@ -15,6 +15,10 @@ on:
         description: "defconfig to use"
         required: true
         default: "defconfig"
+      config_file:
+        description: "optional full .config to seed with (repo path, e.g. kernel/config-pmos-msm8996.aarch64)"
+        required: false
+        default: ""
   push:
     paths:
       - "kernel/**"
@@ -95,7 +99,13 @@ jobs:
         run: |
           set -e
           cd kernel-src
-          make ARCH=arm64 LLVM=1 "${{ github.event.inputs.defconfig || 'defconfig' }}"
+          if [ -n "${{ github.event.inputs.config_file }}" ]; then
+            # seed with a full config (e.g. pmOS msm8996), let Kconfig migrate it
+            cp "../${{ github.event.inputs.config_file }}" .config
+            make ARCH=arm64 LLVM=1 olddefconfig
+          else
+            make ARCH=arm64 LLVM=1 "${{ github.event.inputs.defconfig || 'defconfig' }}"
+          fi
 
           # Ensure required options are on
           for opt in \
