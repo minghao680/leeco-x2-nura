@@ -104,7 +104,8 @@ code:
 	movk	x24, #0x3D65, lsl #48	/* "e=" */
 	movz	x25, #0x4000
 	movk	x25, #0x0001, lsl #16	/* 0x10000 = 64 KiB */
-	add	x26, x20, #16432	/* cmdline slot */
+	movz	x26, #0x4050		/* 16432: cmdline slot offset */
+	add	x26, x20, x26
 2:	ldr	x27, [x19], #8
 	cmp	x27, x24
 	b.eq	3f
@@ -141,9 +142,12 @@ code:
 	smc	#0
 
 	/* still here: reset failed. record SMC's return code for post-mortem */
-	str	w0, [x20, #16428]
+	movz	x28, #0x402C		/* 16428: smc-ret slot offset */
+	add	x28, x20, x28
+	str	w0, [x28]
 	mov	x25, #512
-	add	x27, x20, #16384
+	movz	x27, #0x4000
+	add	x27, x20, x27
 6:	dc	cvac, x27
 	add	x27, x27, #64
 	subs	x25, x25, #64
