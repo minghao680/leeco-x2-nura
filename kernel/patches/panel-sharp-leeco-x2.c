@@ -94,6 +94,16 @@ static int leeco_x2_panel_prepare(struct drm_panel *panel)
 	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, MIPI_DCS_SOFT_RESET);
 	mipi_dsi_msleep(&dsi_ctx, 10);
 
+	/* vendor on-command sequence (dsi-panel-sharp-dualmipi-cmd.dtsi):
+	 * MCAP page 0, then manufacturer interface settings, then the DCS
+	 * standard block. Each vendor packet waits 10ms. */
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xb0, 0x00);
+	mipi_dsi_msleep(&dsi_ctx, 10);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xd6, 0x01);
+	mipi_dsi_msleep(&dsi_ctx, 10);
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xb3, 0x10);
+	mipi_dsi_msleep(&dsi_ctx, 10);
+
 	/* write display brightness */
 	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1,
 					  MIPI_DCS_SET_DISPLAY_BRIGHTNESS, 0xff);
@@ -103,6 +113,10 @@ static int leeco_x2_panel_prepare(struct drm_panel *panel)
 	/* Set tear on */
 	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1,
 					  MIPI_DCS_SET_TEAR_ON, 0x00);
+
+	/* MCAP page 3 */
+	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xb0, 0x03);
+	mipi_dsi_msleep(&dsi_ctx, 10);
 
 	/* Set display on, wait 16ms */
 	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, MIPI_DCS_SET_DISPLAY_ON);
