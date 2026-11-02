@@ -8,9 +8,17 @@
  * This tiny bare-metal arm64 payload is booted by lk2nd EXACTLY like a
  * real kernel (same decompress/DTB-select/patch/jump path). At entry the
  * boot protocol gives us x0 = physical address of the DTB that lk2nd
- * prepared. We dump x0 + the first 4 KiB of whatever x0 points at into
- * the stock 3.18 kernel's pstore console-ramoops buffer (which survives
- * a warm reset), then reset via PSCI. Back on Android:
+ * prepared. We dump into the stock 3.18 kernel's pstore console-ramoops
+ * buffer (which survives a warm reset):
+ *     data[0..7]   "LKPROBE1"
+ *     data[8..15]  x0 (DTB pointer)
+ *     data[16..23] CurrentEL
+ *     data[24..31] SCTLR_EL1
+ *     data[32..]   first 8 KiB at [x0]
+ *     data[8224]   w0 returned by SMC (only reached if reset failed)
+ *     data[8228..] 256 bytes at the first "console=" found in the DTB
+ *                  (= the final bootargs lk2nd wrote into /chosen)
+ * then resets via PSCI. Back on Android:
  *     /sys/fs/pstore/console-ramoops
  * contains our record, parseable offline.
  *
@@ -46,6 +54,7 @@ _start:
 	.quad	0			/* 0x30 res3 */
 	.ascii	"ARM\x64"		/* 0x38 magic */
 	.balign	8
+
 code:
 	/* x0 = DTB pointer from lk2nd */
 	mov	x19, x0
@@ -53,16 +62,16 @@ code:
 	/* console buffer @ 0x915A0000 */
 	movz	x20, #0x915A, lsl #16
 
-	/* sig = 0x43474244 */
+	/* sig = 0x43474244, start = 0, size = 16676 */
 	mov	w21, #0x4244
 	movk	w21, #0x4347, lsl #16
 	str	w21, [x20]
-	str	wzr, [x20, #4]		/* start = 0 */
-	mov	w21, #(12 + 8 + 8 + 8 + 4096)
-	str	w21, [x20, #8]		/* size = 4132 */
+	str	wzr, [x20, #4]
+	movz	w21, #16676
+	str	w21, [x20, #8]
 
-	/* data[0..7]  = "LKPROBE1" */
-	mov	x21, #0x4B4C		/* "LK"   */
+	/* data[0..7] = "LKPROBE1" */
+	movz	x21, #0x4B4C		/* "LK"   */
 	movk	x21, #0x5250, lsl #16	/* "PR"   */
 	movk	x21, #0x454F, lsl #32	/* "OE"   */
 	movk	x21, #0x3131, lsl #48	/* "11"   */
@@ -75,25 +84,54 @@ code:
 	mrs	x21, CurrentEL
 	str	x21, [x20, #28]
 
-	/* data[24..31] = SCTLR (diag: MMU state at entry) */
+	/* data[24..31] = SCTLR_EL1 (diag: MMU/cache state at entry) */
 	mrs	x21, sctlr_el1
 	str	x21, [x20, #36]
 
-	/* data[32..4155] = first 4096 bytes at [x0] */
+	/* data[32..16415] = first 16384 bytes at [x0] */
 	add	x22, x20, #44
-	mov	x23, #4096
+	mov	x23, #16384
 1:	ldr	x24, [x19], #8
 	str	x24, [x22], #8
 	subs	x23, x23, #8
 	b.ne	1b
 
-	/* clean dcache over the written window, then barrier */
-	mov	x23, #0x2000
-	add	x24, x20, #0
-2:	dc	cvac, x24
-	add	x24, x24, #64
-	subs	x23, x23, #64
-	b.gt	2b
+	/* search the 8-byte needle "console=" within the whole DTB (64 KiB) */
+	sub	x19, x19, #16384
+	movz	x24, #0x6F63		/* "co" */
+	movk	x24, #0x6E73, lsl #16	/* "ns" */
+	movk	x24, #0x6C6F, lsl #32	/* "ol" */
+	movk	x24, #0x3D65, lsl #48	/* "e=" */
+	movz	x25, #0x4000
+	movk	x25, #0x0001, lsl #16	/* 0x10000 = 64 KiB */
+	add	x26, x20, #16432	/* cmdline slot */
+2:	ldr	x27, [x19], #8
+	cmp	x27, x24
+	b.eq	3f
+	subs	x25, x25, #8
+	b.ne	2b
+	/* not found: park a marker */
+	movz	x27, #0x4F4E		/* "NO" */
+	movk	x27, #0x4F43, lsl #16	/* "CO" */
+	movk	x27, #0x4E53, lsl #32	/* "SN" */
+	movk	x27, #0x4C4F, lsl #48	/* "OL" */
+	str	x27, [x26]
+	b	4f
+3:	/* found at x19-8: copy 256 bytes from there */
+	sub	x27, x19, #8
+	mov	x25, #256
+31:	ldr	x28, [x27], #8
+	str	x28, [x26], #8
+	subs	x25, x25, #8
+	b.ne	31b
+
+4:	/* clean dcache over everything we wrote, then barrier */
+	movz	x25, #0x8000
+	add	x27, x20, #0
+5:	dc	cvac, x27
+	add	x27, x27, #64
+	subs	x25, x25, #64
+	b.gt	5b
 	dsb	sy
 	isb
 
@@ -102,9 +140,19 @@ code:
 	movk	w0, #0x8400, lsl #16
 	smc	#0
 
+	/* still here: reset failed. record SMC's return code for post-mortem */
+	str	w0, [x20, #16428]
+	mov	x25, #512
+	add	x27, x20, #16384
+6:	dc	cvac, x27
+	add	x27, x27, #64
+	subs	x25, x25, #64
+	b.gt	6b
+	dsb	sy
+
 	mov	w0, #0x0009
 	movk	w0, #0x8400, lsl #16
 	hvc	#0
 
-3:	wfi
-	b	3b
+7:	wfi
+	b	7b

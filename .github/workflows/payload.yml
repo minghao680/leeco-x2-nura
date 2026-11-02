@@ -71,7 +71,7 @@ jobs:
           python3 - <<'EOF'
           d = open('probe.bin','rb').read()
           assert d[0x38:0x3c] == b'ARM\x64', d[:0x40].hex()
-          assert (d[0] & 0xfc) == 0x14, 'first insn must be b'
+          assert (d[3] & 0xfc) == 0x14, 'first insn must be b, got ' + d[:4].hex()
           print('header OK, size', len(d))
           EOF
 

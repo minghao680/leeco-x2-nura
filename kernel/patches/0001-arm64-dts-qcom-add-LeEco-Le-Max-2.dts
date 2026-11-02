@@ -39,7 +39,7 @@
 	qcom,board-id = <0x08 0x2e>;
 
 	aliases {
-		serial0 = &blsp1_uart2;
+		serial0 = &blsp2_uart2;
 	};
 
 	chosen {
@@ -85,16 +85,21 @@
 			record-size  = <0x10000>;
 			pmsg-size    = <0x20000>;
 		};
+
+		/* relocated from 0x91500000, which the stock ramoops uses */
+		mba@92000000 {
+			reg = <0x0 0x92000000 0x0 0x200000>;
+			no-map;
+		};
 	};
 };
 
 /*
  * Upstream msm8996.dtsi reserves 0x91500000 for mba_mem, which collides with
- * the stock ramoops region. Move the MBA out of the way.
+ * the stock ramoops region. Move the MBA out of the way (delete the node and
+ * re-add it so the unit address matches its new reg).
  */
-&mba_mem {
-	reg = <0x0 0x92000000 0x0 0x200000>;
-};
+/delete-node/ &mba_mem;
 
 /*
  * PM8994 RPM regulators.
@@ -190,8 +195,18 @@
 	gpio-reserved-ranges = <0 4>, <81 4>;
 };
 
-/* Debug UART - invaluable when the display does not work yet */
-&blsp1_uart2 {
+/*
+ * Debug UART - invaluable when the display does not work yet.
+ *
+ * The x2 console is BLSP2_UART1 (uart8) on gpio4/5 = mainline blsp2_uart2
+ * (serial@75b0000), exactly as the vendor pinctrl uart_console_active and
+ * lk2nd's uart_dm_init(8, BLSP2_UART1_BASE) both show. blsp1_uart2 is the
+ * BT/hs-uart on gpio41-44 - enabling it was wrong.
+ */
+&blsp2_uart2 {
+	pinctrl-names = "default", "sleep";
+	pinctrl-0 = <&blsp2_uart2_2pins_default>;
+	pinctrl-1 = <&blsp2_uart2_2pins_sleep>;
 	status = "okay";
 };
 
@@ -219,6 +234,7 @@
 	status = "okay";
 
 	vdda-supply = <&vreg_l2a_1p25>;
+	vcca-supply = <&vreg_l28a_0p925>;
 
 	panel@0 {
 		compatible = "sharp,leeco-x2-panel";
@@ -266,6 +282,7 @@
 	status = "okay";
 
 	vdda-supply = <&vreg_l2a_1p25>;
+	vcca-supply = <&vreg_l28a_0p925>;
 };
 
 &mdss_dsi1_out {
