@@ -42,26 +42,27 @@ jobs:
           echo "=== rules.mk before ==="
           cat "$R"
 
-          # ADTBS is one backslash-continued assignment; append our dtb to the
-          # END of that block, keeping the continuation on the last entry.
+          # ADTBS is a single backslash-continued assignment. Append our dtb as
+          # a new continuation line at the END of that assignment: strip the
+          # trailing "\" from the last entry, then add ours with one.
           if ! grep -q "leeco-x2" "$R"; then
-            python3 - "$R" <<'EOF'
-          import re, sys
+            python3 - "$R" <<'PYEOF'
+          import sys
           p = sys.argv[1]
-          src = open(p).read()
-          # find "ADTBS += ..." up to the last continuation line
-          m = re.search(r"(ADTBS\s*\+=[^\n]*(?:\\\n[\s\S]*?)*?)\n\n", src)
-          if not m:
-              sys.exit("could not locate ADTBS assignment")
-          block = m.group(1)
-          if not block.rstrip().endswith("\\"):
-              block = block.rstrip("\n") + " \\"
-          block = block.rstrip("\n")
-          block += "\n\t$(LOCAL_DIR)/msm8996-leeco-x2.dtb \\"
-          src = src[:m.start(1)] + block + src[m.end(1):]
-          open(p, "w").write(src)
+          lines = open(p).read().split("\n")
+          # find the line that starts the ADTBS assignment
+          start = next(i for i, l in enumerate(lines) if l.startswith("ADTBS"))
+          end = start
+          while lines[end].rstrip().endswith("\\"):
+              end += 1
+          # 'end' is the last line of the assignment
+          last = lines[end].rstrip()
+          assert last.endswith("\\"), "expected continuation on last ADTBS line"
+          lines[end] = last[:-1].rstrip() + " \\"
+          lines.insert(end + 1, "\t$(LOCAL_DIR)/msm8996-leeco-x2.dtb")
+          open(p, "w").write("\n".join(lines))
           print("rules.mk updated")
-          EOF
+          PYEOF
           fi
 
           echo "=== rules.mk after ==="
