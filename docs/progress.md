@@ -11,7 +11,7 @@
 - [x] 初版 DTS `kernel/patches/0001-...dts`
 - [x] lk2nd 设备支持 `lk2nd/msm8996-leeco-x2.dts`
 - [x] CI 内核编译工作流
-- [ ] **在 CI 上编译通过**（下一步）
+- [x] **DTB 在 CI 上编译通过**（2026-11-02，board id 全部核对无误）
 - [ ] lk2nd 编译并确认能识别板子
 - [ ] 内核能启动到 initramfs
 - [ ] UFS 被识别
@@ -55,3 +55,4 @@ t-clk-pre=0x30 t-clk-post=0x0d
 
 - 指纹（QBT1000 无主线驱动）
 - 相机（无驱动）
+
