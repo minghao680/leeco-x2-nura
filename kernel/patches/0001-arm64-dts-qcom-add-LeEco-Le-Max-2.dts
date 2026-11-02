@@ -69,15 +69,20 @@
 		 * (msm8996-le-common.dtsi: ramoops_region@91500000). Anything
 		 * written elsewhere is invisible after rebooting back to
 		 * Android/TWRP.
+		 *
+		 * The sub-buffer sizes MUST match the stock 3.18 kernel's
+		 * ramoops module params exactly (console_size=0x40000,
+		 * record_size=0x10000, pmsg_size=0x20000, ecc=0) and the
+		 * kernel's allocation order (dmesg records first, then
+		 * console, then pmsg) so that records written by one kernel
+		 * are parseable by the other. In particular console-size
+		 * 0x60000 made our records unreadable by 3.18.
 		 */
 		ramoops@91500000 {
 			compatible = "ramoops";
 			reg = <0x0 0x91500000 0x0 0x100000>;
-			/* sizes copied from the stock node so both kernels
-			 * agree on the partitioning of the 1 MiB buffer */
-			console-size = <0x60000>;
+			console-size = <0x40000>;
 			record-size  = <0x10000>;
-			ftrace-size  = <0x10000>;
 			pmsg-size    = <0x20000>;
 		};
 	};
