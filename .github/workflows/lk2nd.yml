@@ -1,0 +1,71 @@
+name: Build lk2nd
+
+# Builds lk2nd (secondary bootloader) with the Le Max 2 device tree added.
+# lk2nd is what lets us boot a mainline kernel without fighting the vendor
+# QCDT-packed boot.img: it matches on msm-id/board-id and loads our kernel.
+#
+# Install: fastboot flash boot lk2nd.img
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "lk2nd/**"
+      - ".github/workflows/lk2nd.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc-aarch64-linux-gnu make git bc libssl-dev device-tree-compiler \
+            python3
+
+      - name: Clone lk2nd
+        run: |
+          git clone --depth 1 https://github.com/msm8916-mainline/lk2nd.git lk2nd-src
+
+      - name: Add Le Max 2 device tree
+        run: |
+          set -e
+          S=lk2nd-src
+          cp lk2nd/msm8996-leeco-x2.dts $S/lk2nd/device/dts/msm8996/msm8996-leeco-x2.dts
+
+          R=$S/lk2nd/device/dts/msm8996/rules.mk
+          echo "=== rules.mk before ==="
+          cat "$R"
+          grep -q "leeco-x2" "$R" || \
+            printf 'ADTBS += $(LOCAL_DIR)/msm8996-leeco-x2.dtb\n' >> "$R"
+          echo "=== rules.mk after ==="
+          cat "$R"
+
+      - name: Build lk2nd
+        run: |
+          set -eo pipefail
+          cd lk2nd-src
+          make TOOLCHAIN_PREFIX=aarch64-linux-gnu- lk2nd-msm8996 -j"$(nproc)" 2>&1 | tee ../lk2nd.log | tail -40
+
+      - name: Verify dtb picked up
+        run: |
+          set -e
+          echo "=== built images ==="
+          find lk2nd-src -maxdepth 2 -name "lk2nd*.img" -o -maxdepth 2 -name "*.dtb" | head -20
+          echo "=== our dtb compiled? ==="
+          find lk2nd-src -name "msm8996-leeco-x2.dtb"
+
+      - name: Upload lk2nd image
+        uses: actions/upload-artifact@v4
+        with:
+          name: lk2nd-x2-${{ github.run_number }}
+          path: |
+            lk2nd-src/build-*/lk2nd.img
+            lk2nd-src/**/msm8996-leeco-x2.dtb
+          if-no-files-found: warn
+          retention-days: 30
