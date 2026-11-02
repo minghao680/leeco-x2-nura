@@ -29,8 +29,8 @@ jobs:
       - name: Clone kernel
         env:
           REF: v6.19.5-msm8996
-        run: git clone --depth 1 --branch "$REF" \
-               https://gitlab.com/msm8996-mainline/linux.git kernel-src
+        run: |
+          git clone --depth 1 --branch "$REF" https://gitlab.com/msm8996-mainline/linux.git kernel-src
 
       - name: Install panel driver
         run: |
