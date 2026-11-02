@@ -1,0 +1,89 @@
+name: Quick DTB check
+
+# Compiles ONLY the x2 devicetree. Takes ~2-3 minutes instead of ~50 for a
+# full kernel build, so DTS syntax / phandle mistakes surface fast.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "kernel/patches/*.dts"
+      - ".github/workflows/dtb-check.yml"
+
+jobs:
+  dtb:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bc bison flex libssl-dev libelf-dev device-tree-compiler clang lld llvm
+
+      - name: Clone kernel
+        env:
+          REF: v6.19.5-msm8996
+        run: |
+          git clone --depth 1 --branch "$REF" \
+            https://gitlab.com/msm8996-mainline/linux.git kernel-src
+
+      - name: Patch in the x2 dts
+        run: |
+          set -e
+          cp kernel/patches/0001-arm64-dts-qcom-add-LeEco-Le-Max-2.dts \
+             kernel-src/arch/arm64/boot/dts/qcom/msm8996-leeco-x2.dts
+          MF=kernel-src/arch/arm64/boot/dts/qcom/Makefile
+          if ! grep -q "msm8996-leeco-x2" "$MF"; then
+            awk '{print} /msm8996-oneplus3\.dtb/ && !d {printf "dtb-$(CONFIG_ARCH_QCOM)\t+= msm8996-leeco-x2.dtb\n"; d=1}' \
+              "$MF" > "$MF.new" && mv "$MF.new" "$MF"
+          fi
+          grep -n "leeco-x2" "$MF"
+
+      - name: Configure minimally
+        run: |
+          set -e
+          cd kernel-src
+          # dtbs need ARCH_QCOM on for the dtb-$(CONFIG_ARCH_QCOM) rule
+          scripts/config -e ARCH_QCOM
+          make ARCH=arm64 LLVM=1 olddefconfig
+
+      - name: Build only our dtb
+        run: |
+          set -eo pipefail
+          cd kernel-src
+          make ARCH=arm64 LLVM=1 qcom/msm8996-leeco-x2.dtb 2>&1 | tee ../dtb.log
+          ls -l arch/arm64/boot/dts/qcom/msm8996-leeco-x2.dtb
+
+      - name: Verify board ids in the dtb
+        run: |
+          set -e
+          D=kernel-src/arch/arm64/boot/dts/qcom/msm8996-leeco-x2.dtb
+          dtc -I dtb -O dts "$D" > out.dts 2>/dev/null
+          echo "=== root properties ==="
+          sed -n '1,40p' out.dts | grep -E "model|compatible|msm-id|board-id|pmic-id" || true
+          echo
+          echo "=== checks ==="
+          fail=0
+          grep -q 'model = "LeEco Le Max 2"' out.dts || { echo "::error::model missing"; fail=1; }
+          grep -q "msm8996-leeco-x2\|leeco,x2" out.dts || { echo "::error::compatible missing"; fail=1; }
+          # msm-id <246 0x30001> encodes as 0xf6 0x00 0x03 0x00 0x01
+          if grep -q "msm-id" out.dts; then
+            grep -A3 "qcom,msm-id" out.dts | head -4
+          else
+            echo "::error::qcom,msm-id missing"; fail=1
+          fi
+          grep -q "qcom,board-id" out.dts || { echo "::warning::board-id missing"; }
+          exit $fail
+
+      - name: Upload dtb
+        uses: actions/upload-artifact@v4
+        with:
+          name: dtb-x2-${{ github.run_number }}
+          path: |
+            kernel-src/arch/arm64/boot/dts/qcom/msm8996-leeco-x2.dtb
+            out.dts
+          retention-days: 30
