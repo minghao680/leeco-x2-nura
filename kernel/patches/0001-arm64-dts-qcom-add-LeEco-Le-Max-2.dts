@@ -93,6 +93,12 @@
 			regulator-always-on;
 		};
 
+		vreg_l2a_1p25: l2 {
+			regulator-name = "vreg_l2a_1p25";
+			regulator-min-microvolt = <1250000>;
+			regulator-max-microvolt = <1250000>;
+		};
+
 		vreg_l12a_1p8: l12 {
 			regulator-name = "vreg_l12a_1p8";
 			regulator-min-microvolt = <1800000>;
@@ -170,4 +176,83 @@
 &pm8994_resin {
 	status = "okay";
 	linux,code = <KEY_VOLUMEDOWN>;
+};
+
+/*
+ * Display: Sharp 1440x2560 dual-DSI.
+ *
+ * Values below come from the vendor kernel device tree
+ * (msm8996-le_x2-pvt.dtsi), which is what a retail PVT unit runs:
+ *   qcom,platform-reset-gpio = <&tlmm 24 0>
+ *   qcom,platform-te-gpio    = <&tlmm 97 0>
+ *
+ * The panel has no separate enable GPIO on x2 (the vendor dtsi deletes
+ * qcom,platform-bklight-en-gpio), so only reset is wired up here.
+ */
+&mdss {
+	status = "okay";
+};
+
+&mdss_dsi0 {
+	status = "okay";
+
+	vdda-supply = <&vreg_l2a_1p25>;
+
+	panel@0 {
+		compatible = "sharp,leeco-x2-panel";
+		reg = <0>;
+
+		qcom,dual-dsi-mode;
+		qcom,master-dsi;
+		qcom,sync-dual-dsi;
+
+		reset-gpios = <&tlmm 24 GPIO_ACTIVE_LOW>;
+
+		ports {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			port@0 {
+				reg = <0>;
+				panel0_in: endpoint {
+					remote-endpoint = <&mdss_dsi0_out>;
+				};
+			};
+
+			port@1 {
+				reg = <1>;
+				panel1_in: endpoint {
+					remote-endpoint = <&mdss_dsi1_out>;
+				};
+			};
+		};
+	};
+};
+
+&mdss_dsi0_out {
+	remote-endpoint = <&panel0_in>;
+	data-lanes = <0 1 2 3>;
+};
+
+&mdss_dsi0_phy {
+	status = "okay";
+
+	vdda-supply = <&vreg_l2a_1p25>;
+};
+
+&mdss_dsi1 {
+	status = "okay";
+
+	vdda-supply = <&vreg_l2a_1p25>;
+};
+
+&mdss_dsi1_out {
+	remote-endpoint = <&panel1_in>;
+	data-lanes = <0 1 2 3>;
+};
+
+&mdss_dsi1_phy {
+	status = "okay";
+
+	vdda-supply = <&vreg_l2a_1p25>;
 };
