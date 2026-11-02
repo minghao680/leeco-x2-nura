@@ -69,14 +69,25 @@ jobs:
           DTS=kernel-src/arch/arm64/boot/dts/qcom/msm8996-leeco-x2.dts
           cp kernel/patches/0001-arm64-dts-qcom-add-LeEco-Le-Max-2.dts "$DTS"
 
-          # Register the dtb in the Makefile
+          # Register the dtb in the Makefile.
+          # Each dtb gets its own "dtb-$(CONFIG_ARCH_QCOM)\t+= foo.dtb" line,
+          # tab-indented. Append right after the oneplus3 line so the 8996
+          # group stays together.
           MF=kernel-src/arch/arm64/boot/dts/qcom/Makefile
-          grep -q "msm8996-leeco-x2" "$MF" || \
-            sed -i 's|^\(dtb-$(CONFIG_ARCH_QCOM) += msm8996-oneplus3.dtb\)|\1 \\\n\tdtb-$(CONFIG_ARCH_QCOM) += msm8996-leeco-x2.dtb|' "$MF"
+          if ! grep -q "msm8996-leeco-x2" "$MF"; then
+            awk '
+              { print }
+              /msm8996-oneplus3\.dtb/ && !done {
+                printf "dtb-$(CONFIG_ARCH_QCOM)\t+= msm8996-leeco-x2.dtb\n"
+                done = 1
+              }
+            ' "$MF" > "$MF.new" && mv "$MF.new" "$MF"
+          fi
 
           echo "=== Makefile entry ==="
           grep -n "leeco-x2" "$MF" || {
             echo "::error::failed to register dtb in Makefile"
+            grep -n "msm8996-oneplus3" "$MF" || echo "oneplus3 line not found either"
             exit 1
           }
 
