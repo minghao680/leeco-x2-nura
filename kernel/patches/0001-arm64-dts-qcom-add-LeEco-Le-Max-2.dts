@@ -86,20 +86,15 @@
 			pmsg-size    = <0x20000>;
 		};
 
-		/* relocated from 0x91500000, which the stock ramoops uses */
-		mba@92000000 {
+		/* relocated from 0x91500000, which the stock ramoops uses;
+		 * same label kept so the mba remoteproc reference resolves */
+		/delete-node/ mba@91500000;
+		mba_mem: mba@92000000 {
 			reg = <0x0 0x92000000 0x0 0x200000>;
 			no-map;
 		};
 	};
 };
-
-/*
- * Upstream msm8996.dtsi reserves 0x91500000 for mba_mem, which collides with
- * the stock ramoops region. Move the MBA out of the way (delete the node and
- * re-add it so the unit address matches its new reg).
- */
-/delete-node/ &mba_mem;
 
 /*
  * PM8994 RPM regulators.
