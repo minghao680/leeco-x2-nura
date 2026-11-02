@@ -25,8 +25,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            gcc-aarch64-linux-gnu make git bc libssl-dev device-tree-compiler \
-            python3
+            gcc-arm-none-eabi binutils-arm-none-eabi make git bc \
+            device-tree-compiler python3
+          # lk2nd compiles for 32-bit ARM (cortex-a8) even on msm8996; the
+          # aarch64 cross compiler cannot do that.
+          arm-none-eabi-gcc --version | head -1
 
       - name: Clone lk2nd
         run: |
@@ -52,7 +55,7 @@ jobs:
         run: |
           set -eo pipefail
           cd lk2nd-src
-          make TOOLCHAIN_PREFIX=aarch64-linux-gnu- lk2nd-msm8996 -j"$(nproc)" 2>&1 | tee ../lk2nd.log | tail -40
+          make TOOLCHAIN_PREFIX=arm-none-eabi- lk2nd-msm8996 -j"$(nproc)" 2>&1 | tee ../lk2nd.log | tail -40
 
       - name: Verify dtb picked up
         run: |
