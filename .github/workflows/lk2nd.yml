@@ -41,10 +41,32 @@ jobs:
           R=$S/lk2nd/device/dts/msm8996/rules.mk
           echo "=== rules.mk before ==="
           cat "$R"
-          grep -q "leeco-x2" "$R" || \
-            printf 'ADTBS += $(LOCAL_DIR)/msm8996-leeco-x2.dtb\n' >> "$R"
+
+          # ADTBS is one backslash-continued assignment; append our dtb to the
+          # END of that block, keeping the continuation on the last entry.
+          if ! grep -q "leeco-x2" "$R"; then
+            python3 - "$R" <<'EOF'
+          import re, sys
+          p = sys.argv[1]
+          src = open(p).read()
+          # find "ADTBS += ..." up to the last continuation line
+          m = re.search(r"(ADTBS\s*\+=[^\n]*(?:\\\n[\s\S]*?)*?)\n\n", src)
+          if not m:
+              sys.exit("could not locate ADTBS assignment")
+          block = m.group(1)
+          if not block.rstrip().endswith("\\"):
+              block = block.rstrip("\n") + " \\"
+          block = block.rstrip("\n")
+          block += "\n\t$(LOCAL_DIR)/msm8996-leeco-x2.dtb \\"
+          src = src[:m.start(1)] + block + src[m.end(1):]
+          open(p, "w").write(src)
+          print("rules.mk updated")
+          EOF
+          fi
+
           echo "=== rules.mk after ==="
           cat "$R"
+          grep -q "leeco-x2" "$R" || { echo "::error::dtb not registered"; exit 1; }
 
       - name: Build lk2nd
         run: |
