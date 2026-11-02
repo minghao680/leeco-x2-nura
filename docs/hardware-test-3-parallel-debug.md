@@ -70,3 +70,44 @@ console-ramoops 全程只含 3.18 旧日志（止于每次进入 bootloader 前�
 
 - 全程未写入分区；备份完好
 - 设备 4 次挂死均由人工强制断电恢复（长按电源 10-15s），重启回 Android 正常
+
+## 追加（2026-11-03 02:0x）：PSTORE_RAM=m —— "无日志"的真正元凶之一
+
+对比 pmOS 内核配置（agent 调研）与 fork 的 defconfig：
+
+- fork defconfig：`CONFIG_PSTORE_RAM=m`（模块！）
+- pmOS 配置：`CONFIG_PSTORE_RAM=y`、`PSTORE_CONSOLE=y`、`PANIC_TIMEOUT=0`
+
+我们的设备**没有 rootfs、不加载模块** → ramoops 驱动永远不 probe →
+**即使内核完全正常地活着，console-ramoops 也不会出现**。
+此前"内核死在 ramoops 初始化之前"的所有推断都被这个发现污染，修正为：
+内核实际存活时间未知，lk2nd 路径 ≤10s 的崩溃重启仍然真实，但死因位置不明。
+
+已修复（CI 9dc3cdc）：force-enable `PSTORE/PSTORE_RAM/PSTORE_CONSOLE/PSTORE_PMSG=y`。
+
+## 追加 2：pmOS 参考参数带来的其他修正
+
+1. **cmdline 换成 pmOS 风格**：`earlycon panic=15 lk2nd.pass-ramoops=zap`
+   （无 console=，stdout-path 解析；panic 自动重启；lk2nd 注入 ramoops 节点，
+   崩溃后 `fastboot oem ramoops` 可直接读日志，无需启动 Android）
+2. **`lk2nd.pass-ramoops=zap`**：lk2nd 会把自己的 ramoops reserved-memory
+   注入 OS 的 DTB——独立于我们 DTS 的第三个日志通道（lk2nd issue #431）。
+3. **Mi Note 2 的前车之鉴**：8996 上 MDP SMMU probe 曾导致秒级崩溃，
+   若新内核仍早死，下一步把 mdss/SMMU 节点 disable 做最小化引导。
+4. pmOS 全量配置已入仓：`kernel/config-pmos-msm8996.aarch64`，
+   kernel.yml 支持 `config_file` 输入一键切换。
+
+## 给用户的醒来操作清单（设备现状：黑匣子实验后挂死）
+
+1. **长按电源 10-15 秒强制重启**（黑匣子 v2 的 DTB 转储数据就在 RAM 里！）
+2. 回到系统后告诉我一声，或直接等我处理——我会自动：
+   a. 读 `/sys/fs/pstore/console-ramoops`（应为 LKPROBE1 记录：lk2nd 实际传给内核的 DTB + cmdline）
+   b. 等 CI 构建完（PSTORE_RAM=y 的新内核），组装新 boot.img
+   c. 用「lk2nd → boot 内核 → 崩溃 → fastboot oem ramoops」新回路读首批 6.19 日志
+
+## 黑匣子时间线（记录）
+
+- v1（原始）：`dtb not found` 被拒 → 原因：非 gzip 内核走 decompress 路径失败，
+  dtb_offset=0，扫描从偏移 0 开始 → 修复：gzip 打包
+- v2（gzip 版）：`Booting OKAY` 后设备挂死（PSCI 复位未生效）→ 数据预计已写入
+  0x915A0000，等强制重启读回。已给 v3 加 KPSS 看门狗自恢复（5s 必复位）。
