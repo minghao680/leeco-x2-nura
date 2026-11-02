@@ -110,10 +110,16 @@ jobs:
           ; do
             scripts/config --file .config -e "${opt#CONFIG_}"
           done
+          # pstore/ramoops MUST be built-in: the device boots without a
+          # rootfs, so a =m module never loads and console-ramoops is
+          # silently missing even on healthy boots (defconfig has =m).
+          scripts/config --file .config \
+            -e PSTORE -e PSTORE_RAM -e PSTORE_CONSOLE -e PSTORE_PMSG \
+            -e PSTORE_DEFLATE_COMPRESS -e PSTORE_DEFLATE_COMPRESS_DEFAULT
           make ARCH=arm64 LLVM=1 olddefconfig
 
           echo "=== key options ==="
-          grep -E "CONFIG_(ARCH_QCOM|DRM_MSM|SCSI_UFS_QCOM|PHY_QCOM_QMP_UFS|TOUCHSCREEN_ATMEL_MXT|PINCTRL_MSM8996)=" .config || true
+          grep -E "CONFIG_(ARCH_QCOM|DRM_MSM|SCSI_UFS_QCOM|PHY_QCOM_QMP_UFS|TOUCHSCREEN_ATMEL_MXT|PINCTRL_MSM8996|PSTORE_RAM|PSTORE_CONSOLE)=" .config || true
 
       - name: Build kernel + dtbs
         run: |

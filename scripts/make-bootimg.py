@@ -27,7 +27,13 @@ KERNEL_ADDR = 0x80008000
 RAMDISK_ADDR = 0x81000000
 TAGS_ADDR = 0x80000100
 BOARD = b""
-CMDLINE = b"console=ttyMSM0,115200n8 earlycon panic=15"
+# pmOS-style cmdline for lk2nd devices: console resolution comes from the
+# DTB's chosen/stdout-path, no console= needed. earlycon uses the same path.
+# panic=15: auto-reboot on panic so crash loops don't need manual recovery.
+# lk2nd.pass-ramoops=zap: lk2nd injects its own ramoops reserved-memory into
+# the DTB; after a crash, `fastboot oem ramoops` reads the log directly
+# from lk2nd (no Android boot needed for the readback).
+CMDLINE = b"earlycon panic=15 lk2nd.pass-ramoops=zap"
 
 
 def pad(data: bytes) -> bytes:
