@@ -66,10 +66,15 @@ jobs:
           cd payload
           aarch64-linux-gnu-gcc -c probe.S -o probe.o -nostdlib
           aarch64-linux-gnu-objcopy -O binary probe.o probe.bin
+          # lk2nd only locates the appended DTB correctly on the gzip path
+          # (decompress() returns the dtb offset); raw binaries make the
+          # scan start at offset 0 and fail with 'dtb not found'.
+          gzip -9c probe.bin > probe.gz
           echo "=== disassembly (verify encodings) ==="
           aarch64-linux-gnu-objdump -d probe.o | tee disasm.txt
           python3 - <<'EOF'
-          d = open('probe.bin','rb').read()
+          import gzip
+          d = gzip.decompress(open('probe.gz','rb').read())
           assert d[0x38:0x3c] == b'ARM\x64', d[:0x40].hex()
           assert (d[3] & 0xfc) == 0x14, 'first insn must be b, got ' + d[:4].hex()
           print('header OK, size', len(d))
@@ -78,17 +83,17 @@ jobs:
       - name: Wrap into boot.img
         run: |
           set -eo pipefail
-          python3 scripts/make-bootimg.py payload/probe.bin \
+          python3 scripts/make-bootimg.py payload/probe.gz \
             msm8996-leeco-x2.dtb boot-payload.img
-          ls -l boot-payload.img payload/probe.bin
-          sha256sum payload/probe.bin boot-payload.img
+          ls -l boot-payload.img payload/probe.gz
+          sha256sum payload/probe.gz boot-payload.img
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: lk2nd-probe-${{ github.run_number }}
           path: |
-            payload/probe.bin
+            payload/probe.gz
             payload/disasm.txt
             msm8996-leeco-x2.dtb
             boot-payload.img
