@@ -1,0 +1,18 @@
+# Apply this to drivers/gpu/drm/panel/Kconfig
+#
+# Insert in alphabetical position (after DRM_PANEL_SHARP_LQ079L1SX01).
+
+config DRM_PANEL_SHARP_LEECO_X2
+	tristate "Sharp QHD dual-DSI panel for LeEco Le Max 2"
+	depends on OF
+	depends on DRM_MIPI_DSI
+	depends on BACKLIGHT_CLASS_DEVICE
+	select VIDEOMODE_HELPERS
+	help
+	  Say Y here if you want to enable support for the Sharp 1440x2560
+	  dual-DSI panel found in the LeEco Le Max 2 (x2). The panel is
+	  driven over two bonded 4-lane DSI links, each carrying half of
+	  the 1440 pixel width.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called panel-sharp-leeco-x2.

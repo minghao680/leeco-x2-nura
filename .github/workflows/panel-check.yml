@@ -1,0 +1,91 @@
+name: Panel driver compile check
+
+# Compiles just the x2 panel driver as a module. Catches API mistakes in
+# ~5 minutes without waiting for a full kernel build.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "kernel/patches/panel-sharp-leeco-x2.c"
+      - "kernel/patches/panel-Kconfig.fragment"
+      - ".github/workflows/panel-check.yml"
+
+jobs:
+  compile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bc bison flex libssl-dev libelf-dev device-tree-compiler \
+            clang lld llvm
+
+      - name: Clone kernel
+        env:
+          REF: v6.19.5-msm8996
+        run: git clone --depth 1 --branch "$REF" \
+               https://gitlab.com/msm8996-mainline/linux.git kernel-src
+
+      - name: Install panel driver
+        run: |
+          set -e
+          K=kernel-src
+          cp kernel/patches/panel-sharp-leeco-x2.c \
+             $K/drivers/gpu/drm/panel/panel-sharp-leeco-x2.c
+
+          # Kconfig: insert our symbol alphabetically among the SHARP entries
+          python3 - <<'EOF'
+          import re
+          p = "kernel-src/drivers/gpu/drm/panel/Kconfig"
+          src = open(p).read()
+          frag = open("kernel/patches/panel-Kconfig.fragment").read()
+          # strip the leading comment lines of the fragment
+          frag = "\n".join(l for l in frag.splitlines() if not l.startswith("#")) + "\n"
+          if "DRM_PANEL_SHARP_LEECO_X2" not in src:
+              m = re.search(r"config DRM_PANEL_SHARP_[A-Z0-9_]+\n", src)
+              if not m:
+                  raise SystemExit("no SHARP panel symbol found in Kconfig")
+              src = src[:m.start()] + frag + "\n" + src[m.start():]
+              open(p, "w").write(src)
+              print("Kconfig updated")
+          EOF
+
+          # Makefile
+          M=$K/drivers/gpu/drm/panel/Makefile
+          grep -q "panel-sharp-leeco-x2" "$M" || \
+            printf 'obj-$(CONFIG_DRM_PANEL_SHARP_LEECO_X2) += panel-sharp-leeco-x2.o\n' >> "$M"
+
+          echo "=== Kconfig diff ==="
+          grep -n -A8 "DRM_PANEL_SHARP_LEECO_X2" $K/drivers/gpu/drm/panel/Kconfig | head -12
+          echo "=== Makefile tail ==="
+          tail -3 "$M"
+
+      - name: Configure
+        run: |
+          set -e
+          cd kernel-src
+          make ARCH=arm64 LLVM=1 defconfig
+          scripts/config -e DRM_PANEL_SHARP_LEECO_X2 -e DRM_MIPI_DSI -e DRM_MSM
+          make ARCH=arm64 LLVM=1 olddefconfig
+          grep -E "CONFIG_DRM_PANEL_SHARP_LEECO_X2" .config || {
+            echo "::error::symbol not selectable"; exit 1; }
+
+      - name: Compile the driver
+        run: |
+          set -eo pipefail
+          cd kernel-src
+          make ARCH=arm64 LLVM=1 W=1 \
+            drivers/gpu/drm/panel/panel-sharp-leeco-x2.o 2>&1 | tee ../panel.log
+          ls -l drivers/gpu/drm/panel/panel-sharp-leeco-x2.o
+
+      - name: Show warnings
+        if: always()
+        run: |
+          echo "=== warnings/errors ==="
+          grep -E "warning:|error:" panel.log | head -30 || echo "none"
