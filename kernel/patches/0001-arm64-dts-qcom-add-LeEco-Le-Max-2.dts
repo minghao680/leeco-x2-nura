@@ -75,10 +75,55 @@
 };
 
 /*
+ * PM8994 RPM regulators.
+ *
+ * These labels are NOT inherited from pm8994.dtsi - every msm8996 board
+ * declares the rails it actually uses under &rpm_requests. We only define
+ * the ones referenced below; the voltage values match the oneplus3 and
+ * xiaomi-msm8996 boards, which use an identical UFS supply arrangement.
+ */
+&rpm_requests {
+	regulators {
+		compatible = "qcom,rpm-pm8994-regulators";
+
+		vreg_s4a_1p8: s4 {
+			regulator-name = "vreg_s4a_1p8";
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <1800000>;
+			regulator-always-on;
+		};
+
+		vreg_l12a_1p8: l12 {
+			regulator-name = "vreg_l12a_1p8";
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <1800000>;
+		};
+
+		vreg_l20a_2p95: l20 {
+			regulator-name = "vreg_l20a_2p95";
+			regulator-min-microvolt = <2950000>;
+			regulator-max-microvolt = <2950000>;
+		};
+
+		vreg_l25a_1p2: l25 {
+			regulator-name = "vreg_l25a_1p2";
+			regulator-min-microvolt = <1200000>;
+			regulator-max-microvolt = <1200000>;
+		};
+
+		vreg_l28a_0p925: l28 {
+			regulator-name = "vreg_l28a_0p925";
+			regulator-min-microvolt = <925000>;
+			regulator-max-microvolt = <925000>;
+		};
+	};
+};
+
+/*
  * UFS: Samsung KLUCG4J1CB-B0B1, 6 LUNs.
  * This is the first thing that must work - without rootfs there is no boot.
- * Regulator assignment copied from the oneplus3 reference; x2 may need
- * adjustment once we can read the stock DT regulator phandles.
+ * Supply assignment matches oneplus3 / xiaomi-msm8996, which use the same
+ * PM8994 rail layout for UFS.
  */
 &ufshc {
 	status = "okay";
