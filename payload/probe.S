@@ -51,7 +51,7 @@ code:
 	mov	x19, x0
 
 	/* console buffer @ 0x915A0000 */
-	mov	x20, #0x915A, lsl #16
+	movz	x20, #0x915A, lsl #16
 
 	/* sig = 0x43474244 */
 	mov	w21, #0x4244
