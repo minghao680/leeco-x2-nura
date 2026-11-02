@@ -136,6 +136,22 @@ code:
 	dsb	sy
 	isb
 
+	/*
+	 * Arm the KPSS watchdog @0x9830000 (bite in ~5s @32768Hz) BEFORE
+	 * trying PSCI: whatever goes wrong from here on (smc hangs, reset
+	 * unsupported) still ends in a hardware reset, so the probe never
+	 * needs a manual force-reboot. WDT_RST=0x0, WDT_EN=0x8,
+	 * WDT_BITE_TIME=0x24 (vendor drivers/watchdog/qcom-wdt.c).
+	 */
+	movz	x25, #0x9830, lsl #16	/* 0x98300000 */
+	movz	x27, #0x8000
+	movk	x27, #0x0002, lsl #16	/* 0x28000 = 5s */
+	str	x27, [x25, #0x24]	/* bite time */
+	mov	w27, #1
+	str	w27, [x25]		/* rst */
+	str	w27, [x25, #8]		/* enable */
+	dsb	sy
+
 	/* PSCI SYSTEM_RESET (0x84000009): SMC first, HVC fallback, else spin */
 	mov	w0, #0x0009
 	movk	w0, #0x8400, lsl #16
