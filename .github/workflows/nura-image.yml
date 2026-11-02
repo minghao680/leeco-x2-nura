@@ -1,0 +1,99 @@
+name: Build Nura device image
+
+# Builds a Nura (postmarketOS) rootfs image for the Le Max 2 with pmbootstrap.
+#
+# STATUS: not yet validated. pmbootstrap's CLI flags differ between versions,
+# and the kernel package must ship qcom/msm8996-leeco-x2.dtb before this can
+# succeed. Kept manual-only (workflow_dispatch) until the kernel side works.
+#
+# NOTE: pmbootstrap needs loop devices + mount privileges, hence --privileged.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ui:
+        description: "UI to install"
+        required: true
+        default: "console"
+        type: choice
+        options: [console, phosh, plasma-mobile, sxmo-de-sway, none]
+      release:
+        description: "Nura channel"
+        required: true
+        default: "edge"
+        type: choice
+        options: [edge, v25.06, v24.12]
+      pmaports_ref:
+        description: "nura/pmaports ref to base on"
+        required: true
+        default: "main"
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout port repo
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /opt/hostedtoolcache/CodeQL /usr/local/share/boost 2>/dev/null || true
+          sudo apt-get clean
+          docker image prune -af 2>/dev/null || true
+          df -h /
+
+      - name: Build image in container
+        env:
+          PMB_UI: ${{ github.event.inputs.ui }}
+          PMB_RELEASE: ${{ github.event.inputs.release }}
+          PMAPORTS_REF: ${{ github.event.inputs.pmaports_ref }}
+        run: |
+          set -e
+          docker run --rm --privileged \
+            -v "$PWD:/work" \
+            -w /work \
+            -e PMB_UI -e PMB_RELEASE -e PMAPORTS_REF \
+            alpine:3.20 \
+            /bin/sh -c '
+              set -e
+              apk add --no-cache git python3 py3-pip openssl device-mapper \
+                                 e2fsprogs doas tzdata
+
+              git clone --depth 1 https://gitlab.nura.eco/nura/pmbootstrap.git /opt/pmbootstrap
+              cd /opt/pmbootstrap
+              python3 -m venv /opt/venv
+              . /opt/venv/bin/activate
+              pip install --no-cache-dir -e .
+              echo "=== pmbootstrap version ==="
+              pmbootstrap --version
+
+              git clone --depth 1 -b "$PMAPORTS_REF" \
+                https://gitlab.nura.eco/nura/pmaports.git /tmp/pmaports
+
+              cp -r /work/device/leeco-x2 /tmp/pmaports/device/testing/
+
+              # Show the exact CLI surface so failures are diagnosable
+              pmbootstrap init --help 2>&1 | head -40 || true
+
+              pmbootstrap --aports /tmp/pmaports init \
+                --device leeco-x2 --ui "$PMB_UI" --release "$PMB_RELEASE" 2>&1 | tail -30
+
+              pmbootstrap --aports /tmp/pmaports install --split 2>&1 | tail -40
+
+              mkdir -p /work/out
+              find /root/.local/var/pmbootstrap -maxdepth 2 -name "*.img" -exec cp {} /work/out/ \; 2>/dev/null || true
+              ls -lh /work/out/ || echo "no images produced"
+            '
+
+      - name: Upload image
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nura-image-x2-${{ github.run_number }}
+          path: out/
+          if-no-files-found: warn
+          retention-days: 14

@@ -1,0 +1,4 @@
+# Modules that must be available in the initramfs.
+# The UFS controller and its PHY are needed to find the rootfs.
+ufs_qcom
+phy_qcom_qmp_ufs

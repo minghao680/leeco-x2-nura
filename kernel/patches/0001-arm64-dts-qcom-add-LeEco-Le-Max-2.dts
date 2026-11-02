@@ -1,0 +1,128 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR BSD-3-Clause)
+/*
+ * LeEco Le Max 2 (x2 / LEX820)
+ *
+ * MSM8996 v3 + PMI8996, 5.7" 1440x2560 dual-DSI panel.
+ *
+ * Board identification values were read from the live device:
+ *   /proc/device-tree/qcom,msm-id    = <0xf6 0x30001>
+ *   /proc/device-tree/qcom,board-id  = <0x08 0x2e>
+ *   /proc/device-tree/qcom,pmic-id   = <0x20009 0x10013 0x00 0x00>
+ *
+ * NOTE 1: msm8996-v3.0.dtsi pins qcom,msm-id to <246 0x30000>, but this
+ * device reports <246 0x30001>. We therefore include plain msm8996.dtsi
+ * (the 3.1 revision) and set the correct msm-id ourselves. This matches
+ * what oneplus3 does (it also uses 0x30001 via msm8996.dtsi).
+ *
+ * NOTE 2: Three DTB variants share board-id 0x2e in the stock boot.img
+ * (v3+PMI8996, v3+PMI8994, 8996Pro+PMI8996). The device actually boots the
+ * v3+PMI8996 one, which is what we model here.
+ */
+
+/dts-v1/;
+
+#include "msm8996.dtsi"
+#include "pm8994.dtsi"
+#include "pmi8994.dtsi"
+#include "pmi8996.dtsi"
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+#include <dt-bindings/interrupt-controller/irq.h>
+#include <dt-bindings/pinctrl/qcom,pmic-gpio.h>
+
+/ {
+	model = "LeEco Le Max 2";
+	compatible = "leeco,x2", "qcom,msm8996";
+	chassis-type = "handset";
+
+	qcom,msm-id = <246 0x30001>;
+	qcom,board-id = <0x08 0x2e>;
+
+	aliases {
+		serial0 = &blsp1_uart2;
+	};
+
+	chosen {
+		stdout-path = "serial0:115200n8";
+	};
+
+	gpio-keys {
+		compatible = "gpio-keys";
+		pinctrl-names = "default";
+		pinctrl-0 = <&vol_up_pin_a>;
+
+		key-vol-up {
+			label = "Volume Up";
+			linux,code = <KEY_VOLUMEUP>;
+			gpios = <&pm8994_gpios 3 GPIO_ACTIVE_LOW>;
+		};
+	};
+
+	reserved-memory {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		ramoops@bff00000 {
+			compatible = "ramoops";
+			reg = <0x0 0xbff00000 0x0 0x100000>;
+			record-size = <0x20000>;
+			console-size = <0x40000>;
+			ftrace-size = <0x20000>;
+			pmsg-size = <0x20000>;
+		};
+	};
+};
+
+/*
+ * UFS: Samsung KLUCG4J1CB-B0B1, 6 LUNs.
+ * This is the first thing that must work - without rootfs there is no boot.
+ * Regulator assignment copied from the oneplus3 reference; x2 may need
+ * adjustment once we can read the stock DT regulator phandles.
+ */
+&ufshc {
+	status = "okay";
+
+	vcc-supply = <&vreg_l20a_2p95>;
+	vccq-supply = <&vreg_l25a_1p2>;
+	vccq2-supply = <&vreg_s4a_1p8>;
+	vdd-hba-supply = <&vreg_l25a_1p2>;
+
+	vcc-max-microamp = <600000>;
+	vccq-max-microamp = <450000>;
+	vccq2-max-microamp = <450000>;
+};
+
+&ufsphy {
+	status = "okay";
+
+	vdda-phy-supply = <&vreg_l28a_0p925>;
+	vdda-pll-supply = <&vreg_l12a_1p8>;
+
+	vdda-phy-max-microamp = <89700>;
+	vdda-pll-max-microamp = <18300>;
+};
+
+/* Volume keys live on PMIC GPIOs */
+&pm8994_gpios {
+	vol_up_pin_a: vol-up-state {
+		pins = "gpio3";
+		function = PMIC_GPIO_FUNC_NORMAL;
+		bias-pull-up;
+		input-enable;
+	};
+};
+
+&tlmm {
+	gpio-reserved-ranges = <0 4>, <81 4>;
+};
+
+/* Debug UART - invaluable when the display does not work yet */
+&blsp1_uart2 {
+	status = "okay";
+};
+
+&pm8994_resin {
+	status = "okay";
+	linux,code = <KEY_VOLUMEDOWN>;
+};

@@ -1,0 +1,56 @@
+# LeEco Le Max 2 (x2 / LEX820) - Nura device package
+#
+# This mirrors device/testing/device-xiaomi-scorpio, the only non-archived
+# msm8996 device in pmaports.
+
+pkgname=device-leeco-x2
+pkgdesc="LeEco Le Max 2"
+pkgver=0.1
+pkgrel=0
+url="https://github.com/minghao680/leeco-x2-nura"
+license="MIT"
+arch="aarch64"
+options="!check !archcheck"
+depends="
+	bootmac
+	firmware-leeco-x2
+	linux-firmware-ath10k
+	linux-firmware-qca
+	linux-firmware-qcom
+	linux-postmarketos-qcom-msm8996
+	megapixels
+	mesa-egl
+	mkbootimg
+	msm-modem
+	postmarketos-base
+	postprocessd
+	soc-qcom-msm8996
+	soc-qcom-msm8996-ucm
+	"
+makedepends="devicepkg-dev"
+subpackages="
+	$pkgname-openrc
+	"
+source="
+	deviceinfo
+	modules-initfs
+	kernel-cmdline.conf
+	30-gpu-firmware.files
+	"
+
+build() {
+	devicepkg_build $startdir $pkgname
+}
+
+package() {
+	devicepkg_package $startdir $pkgname
+
+	install -Dm644 "$srcdir/30-gpu-firmware.files" \
+		-t "$pkgdir/usr/share/mkinitfs/files"
+}
+
+openrc() {
+	default_openrc
+
+	mkdir "$subpkgdir"
+}

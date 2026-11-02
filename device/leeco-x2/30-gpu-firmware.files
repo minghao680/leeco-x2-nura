@@ -1,0 +1,3 @@
+# MSM8996 GPU firmware (Adreno 530)
+# Required for the msm DRM driver to bring up the GPU.
+# a530_pm4.fw and a530_pfp.fw are extracted by firmware-leeco-x2.
