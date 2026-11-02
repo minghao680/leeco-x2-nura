@@ -4,4 +4,7 @@ out/
 kernel-src/
 *.img
 *.dtb
+*.gzout/
+*.dtb
+*.img
 *.gz
