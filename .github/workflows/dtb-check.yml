@@ -43,6 +43,27 @@ jobs:
           fi
           grep -n "leeco-x2" "$MF"
 
+      - name: Install panel driver
+        run: |
+          set -e
+          K=kernel-src
+          cp kernel/patches/panel-sharp-leeco-x2.c \
+             $K/drivers/gpu/drm/panel/panel-sharp-leeco-x2.c
+          python3 - <<'EOF'
+          import re
+          p = "kernel-src/drivers/gpu/drm/panel/Kconfig"
+          src = open(p).read()
+          frag = open("kernel/patches/panel-Kconfig.fragment").read()
+          frag = "\n".join(l for l in frag.splitlines() if not l.startswith("#")) + "\n"
+          if "DRM_PANEL_SHARP_LEECO_X2" not in src:
+              m = re.search(r"config DRM_PANEL_SHARP_[A-Z0-9_]+\n", src)
+              src = src[:m.start()] + frag + "\n" + src[m.start():]
+              open(p, "w").write(src)
+          EOF
+          M=$K/drivers/gpu/drm/panel/Makefile
+          grep -q "panel-sharp-leeco-x2" "$M" || \
+            printf 'obj-$(CONFIG_DRM_PANEL_SHARP_LEECO_X2) += panel-sharp-leeco-x2.o\n' >> "$M"
+
       - name: Configure minimally
         run: |
           set -e
