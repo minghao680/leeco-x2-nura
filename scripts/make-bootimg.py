@@ -45,7 +45,7 @@ def pad(data: bytes) -> bytes:
 
 
 def main(kernel_path: str, dtb_path: str | None, out_path: str,
-         kernel_addr: int = KERNEL_ADDR) -> int:
+         kernel_addr: int = KERNEL_ADDR, ramdisk_path: str | None = None) -> int:
     with open(kernel_path, "rb") as f:
         kernel = f.read()
 
@@ -60,12 +60,14 @@ def main(kernel_path: str, dtb_path: str | None, out_path: str,
     kernel_blob = kernel if dtb_path is None else kernel + open(dtb_path, "rb").read()
     dtb_len = len(kernel_blob) - len(kernel)
 
+    ramdisk = b"" if ramdisk_path is None else open(ramdisk_path, "rb").read()
+
     header = struct.pack(
         "<8s10I16s512s32s1024s",
         b"ANDROID!",
         len(kernel_blob),       # kernel_size covers kernel + appended dtb
         kernel_addr,
-        0,                      # no ramdisk
+        len(ramdisk),           # ramdisk_size (0 when None)
         RAMDISK_ADDR,
         0,                      # no second stage
         0,
@@ -82,10 +84,13 @@ def main(kernel_path: str, dtb_path: str | None, out_path: str,
     with open(out_path, "wb") as f:
         f.write(pad(header))
         f.write(pad(kernel_blob))
+        if ramdisk:
+            f.write(pad(ramdisk))
 
     print(f"kernel      : {len(kernel)} bytes")
     print(f"dtb         : {dtb_len} bytes" + ("  (--no-dtb mode)" if dtb_len == 0 else ""))
     print(f"kernel blob : {len(kernel_blob)} bytes")
+    print(f"ramdisk     : {len(ramdisk)} bytes")
     print(f"kernel addr : {kernel_addr:#x}")
     print(f"image       : {out_path}")
     return 0
@@ -94,13 +99,18 @@ def main(kernel_path: str, dtb_path: str | None, out_path: str,
 if __name__ == "__main__":
     args = sys.argv[1:]
     kernel_addr = KERNEL_ADDR
+    ramdisk_path = None
+    if "--ramdisk" in args:
+        i = args.index("--ramdisk")
+        ramdisk_path = args[i + 1]
+        del args[i:i + 2]
     if "--addr" in args:
         i = args.index("--addr")
         kernel_addr = int(args[i + 1], 0)
         del args[i:i + 2]
     if len(args) == 4 and args[0] == "--no-dtb":
-        sys.exit(main(args[1], None, args[3], kernel_addr))
+        sys.exit(main(args[1], None, args[3], kernel_addr, ramdisk_path))
     if len(args) == 3:
-        sys.exit(main(args[0], args[1], args[2], kernel_addr))
+        sys.exit(main(args[0], args[1], args[2], kernel_addr, ramdisk_path))
     print(__doc__)
     sys.exit(2)
