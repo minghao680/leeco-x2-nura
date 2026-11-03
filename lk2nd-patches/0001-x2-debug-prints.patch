@@ -365,10 +365,10 @@ index c51fb4d..37ab65a 100644
  	if (out_len)
  		*out_len = stream->total_out;
 diff --git a/platform/msm8996/platform.c b/platform/msm8996/platform.c
-index 1fc7045..42d9bb3 100644
+index 1fc7045..5bba62e 100644
 --- a/platform/msm8996/platform.c
 +++ b/platform/msm8996/platform.c
-@@ -67,12 +67,28 @@ static uint64_t ddr_start;
+@@ -67,12 +67,41 @@ static uint64_t ddr_start;
  static mmu_section_t default_mmu_section_table[] =
  {
  /*       Physical addr,    Virtual addr,     Mapping type ,              Size (in MB),            Flags */
@@ -392,6 +392,19 @@ index 1fc7045..42d9bb3 100644
 +	 * fail and the phone silently reset ~4s in.
 +	 */
 +    {    0x00000000,        0x00000000,       MMU_L2_NS_SECTION_MAPPING,  512,                LK_MEMORY},
++	/*
++	 * Main DDR window. The arm64 kernel, its tags/DTB copy and the ramdisk
++	 * all land at ddr_start+0x0 / +0x2500000 / +0x2700000 (0x80000000,
++	 * 0x82500000, 0x82700000 on x2). This window had NO mapping at all -
++	 * not even the stock table covered it - so every write there (the
++	 * memcpy of the DTB into tags_addr included) faulted silently while
++	 * lk2nd kept running, leaving tags_addr with garbage and making
++	 * update_device_tree() panic with "Invalid device tree header".
++	 *
++	 * 1 GB is enough for the boot image and is a subset of the DRAM that
++	 * XBL reports for this board.
++	 */
++	{    0x80000000,        0x80000000,       MMU_L2_NS_SECTION_MAPPING,  1024,               LK_MEMORY},
 +	{    MEMBASE,           MEMBASE,          MMU_L2_NS_SECTION_MAPPING,  (MEMSIZE / MB),      LK_MEMORY},
 +	{    MIPI_FB_ADDR,      MIPI_FB_ADDR,     MMU_L2_NS_SECTION_MAPPING,  40,                  LK_MEMORY},
 +	{    SCRATCH_ADDR,      SCRATCH_ADDR,     MMU_L2_NS_SECTION_MAPPING,  SCRATCH_SIZE,        SCRATCH_MEMORY},
@@ -403,7 +416,7 @@ index 1fc7045..42d9bb3 100644
  };
  
  /* Map the ddr for download mode, this region belongs to non-hlos images and pil */
-@@ -134,19 +150,64 @@ void platform_init_mmu_mappings(void)
+@@ -134,19 +163,64 @@ void platform_init_mmu_mappings(void)
  #endif
  	uint64_t ddr_size = smem_get_ddr_size();
  
@@ -480,7 +493,7 @@ index 1fc7045..42d9bb3 100644
  
  #if LPAE
  	kernel_mmu_section_table.paddress = ddr_start;
-@@ -208,7 +269,20 @@ addr_t platform_get_virt_to_phys_mapping(addr_t virt_addr)
+@@ -208,7 +282,20 @@ addr_t platform_get_virt_to_phys_mapping(addr_t virt_addr)
  addr_t platform_get_phys_to_virt_mapping(addr_t phys_addr)
  {
  #if LPAE
