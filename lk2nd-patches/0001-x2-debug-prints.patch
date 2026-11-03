@@ -1,8 +1,21 @@
 diff --git a/app/aboot/aboot.c b/app/aboot/aboot.c
-index b44a5c2..effc627 100644
+index b44a5c2..f2b190d 100644
 --- a/app/aboot/aboot.c
 +++ b/app/aboot/aboot.c
-@@ -1296,24 +1296,41 @@ tags_done:
+@@ -1215,6 +1215,12 @@ void boot_linux(void *kernel, unsigned *tags,
+ 
+ 	ramdisk = (void *)PA((addr_t)ramdisk);
+ 
++	dprintf(INFO, "x2dbg: kptr=%p magic_64=%08x (want %08x) image_size=%llx text_off=%llx arm64=%d\n",
++		(void*)kptr, kptr->magic_64, KERNEL64_HDR_MAGIC,
++		(unsigned long long)kptr->image_size,
++		(unsigned long long)kptr->text_offset,
++		IS_ARM64(kptr) ? 1 : 0);
++
+ 	if (IS_ARM64(kptr))
+ 		boot_type |= BOOT_ARM64;
+ 	if (strstr(cmdline, "androidboot"))
+@@ -1296,24 +1302,41 @@ tags_done:
  	dprintf(INFO, "booting linux @ %p, ramdisk @ %p (%d), tags/device tree @ %p\n",
  		entry, ramdisk, ramdisk_size, (void *)tags_phys);
  
@@ -30,7 +43,7 @@ index b44a5c2..effc627 100644
 +	 */
 +	{
 +		extern void x2_lklog_marker(const char *);
-+		x2_lklog_marker_raw("MK1b:skip-cache-mmu-off");
++		x2_lklog_marker_raw(IS_ARM64(kptr) ? "MK1b:arm64-yes" : "MK1b:arm64-NO");
 +	}
  	bs_set_timestamp(BS_KERNEL_ENTRY);
  
@@ -50,7 +63,7 @@ index b44a5c2..effc627 100644
  }
  
  /* Function to check if the memory address range falls within the aboot
-@@ -3460,6 +3477,15 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
+@@ -3460,6 +3483,15 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
  	memmove((void*) hdr->ramdisk_addr, ptr + page_size + kernel_actual, hdr->ramdisk_size);
  	memmove((void*) hdr->kernel_addr, (char*) (kernel_start_addr), kernel_size);
  
@@ -66,7 +79,7 @@ index b44a5c2..effc627 100644
  	fastboot_okay("");
  	fastboot_stop();
  
-@@ -3469,6 +3495,11 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
+@@ -3469,6 +3501,11 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
  	thread_sleep(LK2ND_FASTBOOT_DELAY);
  	#endif
  
@@ -78,7 +91,7 @@ index b44a5c2..effc627 100644
  	boot_linux((void*) hdr->kernel_addr, (void*) hdr->tags_addr,
  		   (const char*) hdr->cmdline, board_machtype(),
  		   (void*) hdr->ramdisk_addr, hdr->ramdisk_size,
-@@ -3491,8 +3522,7 @@ void cmd_erase_nand(const char *arg, void *data, unsigned sz)
+@@ -3491,8 +3528,7 @@ void cmd_erase_nand(const char *arg, void *data, unsigned sz)
  
  	ptable = flash_get_ptable();
  	if (ptable == NULL) {
