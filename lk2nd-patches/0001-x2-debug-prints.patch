@@ -503,7 +503,7 @@ index 1fc7045..42d9bb3 100644
  	/* Using 1-1 mapping on this platform. */
  	return phys_addr;
 diff --git a/platform/msm_shared/dev_tree.c b/platform/msm_shared/dev_tree.c
-index 86757c0..091d9fc 100644
+index 86757c0..87f5631 100644
 --- a/platform/msm_shared/dev_tree.c
 +++ b/platform/msm_shared/dev_tree.c
 @@ -1297,6 +1297,48 @@ void *dev_tree_appended(void *kernel, uint32_t kernel_size, uint32_t dtb_offset,
@@ -597,6 +597,19 @@ index 86757c0..091d9fc 100644
  	}
  
  	best_match_dt_entry = platform_dt_match_best(dt_entry_queue);
+@@ -1396,7 +1462,12 @@ void *dev_tree_appended(void *kernel, uint32_t kernel_size, uint32_t dtb_offset,
+ 			dprintf(CRITICAL, "Tags addresses overlap with aboot addresses.\n");
+ 			return NULL;
+ 		}
++		dprintf(INFO, "x2dbg: memcpy tags=%p src=%p size=0x%x srcmagic=%08x\n",
++			tags, bestmatch_tag, bestmatch_tag_size,
++			*(uint32_t *)bestmatch_tag);
+ 		memcpy(tags, bestmatch_tag, bestmatch_tag_size);
++		dprintf(INFO, "x2dbg: after memcpy tags magic=%08x total=%u\n",
++			*(uint32_t *)tags, fdt_totalsize(tags));
+ 		/* clear out the old DTB magic so kernel doesn't find it */
+ 		*((uint32_t *)(kernel + app_dtb_offset)) = 0;
+ 		return tags;
 diff --git a/platform/msm_shared/scm.c b/platform/msm_shared/scm.c
 index 8c76083..69d526f 100644
 --- a/platform/msm_shared/scm.c
