@@ -1,5 +1,5 @@
 diff --git a/app/aboot/aboot.c b/app/aboot/aboot.c
-index b44a5c2..772ccf3 100644
+index b44a5c2..f4149af 100644
 --- a/app/aboot/aboot.c
 +++ b/app/aboot/aboot.c
 @@ -1215,6 +1215,12 @@ void boot_linux(void *kernel, unsigned *tags,
@@ -81,7 +81,7 @@ index b44a5c2..772ccf3 100644
  	if(dt_size != 0) {
  		/* add kernel offset */
  		dt_image_offset += page_size;
-@@ -3441,6 +3475,28 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
+@@ -3441,6 +3475,31 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
  	 */
  	if (!dtb_copied) {
  		void *dtb;
@@ -97,6 +97,9 @@ index b44a5c2..772ccf3 100644
 +			unsigned char *blob = (unsigned char *)(ptr + page_size);
 +			uint32_t i, scan_end = hdr->kernel_size;
 +
++			dprintf(INFO, "x2dbg: scan blob=%p len=%u first=%02x%02x%02x%02x patched=%d\n",
++				(void*)blob, scan_end,
++				blob[0], blob[1], blob[2], blob[3], dtb_offset);
 +			for (i = 0; i + 8 <= scan_end; i += 4) {
 +				if (blob[i] == 0xd0 && blob[i+1] == 0x0d &&
 +				    blob[i+2] == 0xfe && blob[i+3] == 0xed) {
@@ -110,7 +113,7 @@ index b44a5c2..772ccf3 100644
  		dtb = dev_tree_appended((void*)(ptr + page_size),
  					hdr->kernel_size, dtb_offset,
  					(void *)hdr->tags_addr);
-@@ -3460,6 +3516,15 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
+@@ -3460,6 +3519,15 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
  	memmove((void*) hdr->ramdisk_addr, ptr + page_size + kernel_actual, hdr->ramdisk_size);
  	memmove((void*) hdr->kernel_addr, (char*) (kernel_start_addr), kernel_size);
  
@@ -126,7 +129,7 @@ index b44a5c2..772ccf3 100644
  	fastboot_okay("");
  	fastboot_stop();
  
-@@ -3469,6 +3534,11 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
+@@ -3469,6 +3537,11 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
  	thread_sleep(LK2ND_FASTBOOT_DELAY);
  	#endif
  
@@ -138,7 +141,7 @@ index b44a5c2..772ccf3 100644
  	boot_linux((void*) hdr->kernel_addr, (void*) hdr->tags_addr,
  		   (const char*) hdr->cmdline, board_machtype(),
  		   (void*) hdr->ramdisk_addr, hdr->ramdisk_size,
-@@ -3491,8 +3561,7 @@ void cmd_erase_nand(const char *arg, void *data, unsigned sz)
+@@ -3491,8 +3564,7 @@ void cmd_erase_nand(const char *arg, void *data, unsigned sz)
  
  	ptable = flash_get_ptable();
  	if (ptable == NULL) {
