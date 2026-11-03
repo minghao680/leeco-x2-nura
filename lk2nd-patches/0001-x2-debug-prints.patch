@@ -215,10 +215,10 @@ index 64ef6f6..5ee97d7 100644
  
  	return INT_MAX;
 diff --git a/platform/msm8996/platform.c b/platform/msm8996/platform.c
-index 1fc7045..a38793b 100644
+index 1fc7045..afd0859 100644
 --- a/platform/msm8996/platform.c
 +++ b/platform/msm8996/platform.c
-@@ -134,19 +134,45 @@ void platform_init_mmu_mappings(void)
+@@ -134,19 +134,60 @@ void platform_init_mmu_mappings(void)
  #endif
  	uint64_t ddr_size = smem_get_ddr_size();
  
@@ -252,6 +252,21 @@ index 1fc7045..a38793b 100644
 -			ASSERT(0);
 -	};
 +		uint64_t smem_start = get_ddr_start();
++
++		/*
++		 * LeEco Le Max 2 (x2) is a 4 GB LPAE board, but its SMEM RAM
++		 * partition table describes a 6 GB layout starting at
++		 * 0x40000000 while XBL hands lk2nd a /memory node at
++		 * 0x80000000 (0x0 0x80000000 0x0 0xC0000000 + a high LPAE
++		 * chunk). Trusting the SMEM base puts the kernel at
++		 * 0x40008000 - the address lk2nd itself occupies - and the
++		 * jump kills the bootloader.
++		 *
++		 * On this board the usable DDR really starts at 0x80000000;
++		 * the 0x40000000-0x7FFFFFFF window is not backed by DRAM.
++		 */
++		if (smem_start == 0x40000000 && ddr_size >= MEM_6GB)
++			smem_start = 0x80000000;
 +
 +		if (smem_start)
 +			ddr_start = smem_start;
