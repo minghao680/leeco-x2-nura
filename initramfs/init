@@ -1,0 +1,66 @@
+#!/bin/sh
+# x2 minimal initramfs init - goal: get a shell (serial or USB) as early as
+# possible, with no rootfs present.
+#
+# Boot flow on this device: lk2nd -> arm64 kernel -> this initramfs.
+# We bring up:
+#   * /proc /sys /dev
+#   * USB gadget (g_serial -> /dev/ttyGS0) so a host can get a console
+#   * fbcon on the DSI panel if DRM came up
+#   * a root shell on the console
+
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+
+mount -t proc  none /proc  2>/dev/null
+mount -t sysfs none /sys   2>/dev/null
+mount -t devtmpfs none /dev 2>/dev/null || mdev -s
+
+echo
+echo "=== x2 mainline initramfs ==="
+cat /proc/version
+echo "cmdline: $(cat /proc/cmdline)"
+echo
+
+# Keep console output alive
+if [ -c /dev/ttyMSM0 ]; then
+	exec </dev/ttyMSM0 >/dev/ttyMSM0 2>&1
+	echo "[init] console: ttyMSM0"
+fi
+
+# USB serial gadget: gives a shell over USB with no rootfs
+mkdir -p /sys/kernel/config 2>/dev/null
+mount -t configfs none /sys/kernel/config 2>/dev/null
+if [ -d /sys/kernel/config/usb_gadget ]; then
+	mkdir -p /sys/kernel/config/usb_gadget/g1 2>/dev/null
+	cd /sys/kernel/config/usb_gadget/g1 2>/dev/null && {
+		echo 0x1d6b > idVendor
+		echo 0x0104 > idProduct
+		mkdir -p strings/0x409
+		echo "leeco" > strings/0x409/manufacturer
+		echo "x2"    > strings/0x409/product
+		mkdir -p configs/c.1/strings/0x409
+		echo "serial" > configs/c.1/strings/0x409/configuration
+		mkdir -p functions/acm.usb0 2>/dev/null
+		ln -sf functions/acm.usb0 configs/c.1/ 2>/dev/null
+		UDC=$(ls /sys/class/udc 2>/dev/null | head -1)
+		[ -n "$UDC" ] && echo "$UDC" > UDC && echo "[init] USB ACM gadget on $UDC"
+		cd /
+	}
+fi
+
+# Report what came up
+echo "[init] block devices:"; ls /dev/mmcblk* /dev/sd* 2>/dev/null | head
+echo "[init] drm:";          ls /dev/dri 2>/dev/null
+echo "[init] input:";        ls /dev/input 2>/dev/null | head
+
+# Shell on every likely console
+for c in /dev/ttyGS0 /dev/ttyMSM0 /dev/console; do
+	[ -c "$c" ] && {
+		echo "[init] starting shell on $c"
+		setsid sh -i <"$c" >"$c" 2>&1 &
+	}
+done
+
+echo
+echo "=== x2 shell ready (no rootfs) ==="
+exec sh -i
