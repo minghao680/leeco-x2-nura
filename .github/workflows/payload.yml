@@ -105,6 +105,19 @@ jobs:
             msm8996-leeco-x2.dtb boot-state.img
           ls -l boot-state.img
 
+      - name: Assemble panel-paint payload
+        run: |
+          set -eo pipefail
+          cd payload
+          aarch64-linux-gnu-gcc -c paint.S -o paint.o -nostdlib
+          aarch64-linux-gnu-objcopy -O binary paint.o paint.bin
+          gzip -9c paint.bin > paint.gz
+          aarch64-linux-gnu-objdump -d paint.o | head -30
+          cd ..
+          python3 scripts/make-bootimg.py payload/paint.gz \
+            msm8996-leeco-x2.dtb boot-paint.img
+          ls -l boot-paint.img
+
       - name: Wrap into boot.img
         run: |
           set -eo pipefail
@@ -124,6 +137,8 @@ jobs:
             boot-payload.img
             boot-minimal.img
             boot-state.img
+            boot-paint.img
+            payload/paint.gz
             payload/minimal.gz
             payload/state.gz
           if-no-files-found: error
