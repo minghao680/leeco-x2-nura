@@ -364,8 +364,33 @@ index c51fb4d..37ab65a 100644
  
  	if (out_len)
  		*out_len = stream->total_out;
+diff --git a/platform/msm8996/include/platform/iomap.h b/platform/msm8996/include/platform/iomap.h
+index c8a2cc3..22d414c 100644
+--- a/platform/msm8996/include/platform/iomap.h
++++ b/platform/msm8996/include/platform/iomap.h
+@@ -685,6 +685,19 @@ unsigned int usb_phy_bcr(void);
+ #define DDR_START                    platform_get_ddr_start()
+ #define ABOOT_FORCE_KERNEL_ADDR      (DDR_START + 0x8000)
+ #define ABOOT_FORCE_RAMDISK_ADDR     (DDR_START + 0x2700000)
+-#define ABOOT_FORCE_TAGS_ADDR        (DDR_START + 0x2500000)
++/*
++ * x2: keep tags clear of the kernel image.
++ *
++ * XBL's default places tags at DDR_START+0x2500000 (0x82500000) and the
++ * arm64 kernel at DDR_START+0x80000. Our 6.19 Image is 40 MB
++ * (0x2694000), so the kernel occupies 0x80000000-0x82694000 and the
++ * memmove() of the kernel runs straight over the DTB that was just
++ * copied to tags_addr - the DTB magic then reads 0x00000001 and
++ * update_device_tree() panics "Invalid device tree header".
++ *
++ * Move tags past the largest image we expect (up to 0x83000000) and keep
++ * the ramdisk where it is.
++ */
++#define ABOOT_FORCE_TAGS_ADDR        (DDR_START + 0x3000000)
+ #define ABOOT_FORCE_KERNEL64_ADDR    (DDR_START + 0x80000)
+ #endif
 diff --git a/platform/msm8996/platform.c b/platform/msm8996/platform.c
-index 1fc7045..5bba62e 100644
+index 1fc7045..746c27c 100644
 --- a/platform/msm8996/platform.c
 +++ b/platform/msm8996/platform.c
 @@ -67,12 +67,41 @@ static uint64_t ddr_start;
@@ -404,7 +429,7 @@ index 1fc7045..5bba62e 100644
 +	 * 1 GB is enough for the boot image and is a subset of the DRAM that
 +	 * XBL reports for this board.
 +	 */
-+	{    0x80000000,        0x80000000,       MMU_L2_NS_SECTION_MAPPING,  1024,               LK_MEMORY},
++	{    0x80000000,        0x80000000,       MMU_L2_NS_SECTION_MAPPING,  1280,               LK_MEMORY},
 +	{    MEMBASE,           MEMBASE,          MMU_L2_NS_SECTION_MAPPING,  (MEMSIZE / MB),      LK_MEMORY},
 +	{    MIPI_FB_ADDR,      MIPI_FB_ADDR,     MMU_L2_NS_SECTION_MAPPING,  40,                  LK_MEMORY},
 +	{    SCRATCH_ADDR,      SCRATCH_ADDR,     MMU_L2_NS_SECTION_MAPPING,  SCRATCH_SIZE,        SCRATCH_MEMORY},
