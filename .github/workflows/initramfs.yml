@@ -1,0 +1,91 @@
+name: Build x2 initramfs + boot.img
+
+# Builds a minimal busybox initramfs (shell over serial/USB ACM, no rootfs
+# needed) and wraps kernel + dtb + initramfs into a boot image.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "initramfs/**"
+      - ".github/workflows/initramfs.yml"
+
+env:
+  KERNEL_REPO: https://gitlab.com/msm8996-mainline/linux.git
+  KERNEL_REF: v6.19.5-msm8996
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            busybox-static cpio python3 bc bison flex device-tree-compiler
+
+      - name: Build x2 dtb
+        run: |
+          set -eo pipefail
+          git clone --depth 1 --branch "$KERNEL_REF" "$KERNEL_REPO" kernel-src
+          cp kernel/patches/0001-arm64-dts-qcom-add-LeEco-Le-Max-2.dts \
+             kernel-src/arch/arm64/boot/dts/qcom/msm8996-leeco-x2.dts
+          MF=kernel-src/arch/arm64/boot/dts/qcom/Makefile
+          grep -q "msm8996-leeco-x2" "$MF" || awk '
+            { print }
+            /msm8996-oneplus3\.dtb/ && !done {
+              printf "dtb-$(CONFIG_ARCH_QCOM)\t+= msm8996-leeco-x2.dtb\n"
+              done = 1
+            }' "$MF" > "$MF.new" && mv "$MF.new" "$MF"
+          cd kernel-src
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- defconfig >/dev/null
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- qcom/msm8996-leeco-x2.dtb
+          cp arch/arm64/boot/dts/qcom/msm8996-leeco-x2.dtb ../
+
+      - name: Build initramfs (busybox, static)
+        run: |
+          set -eo pipefail
+          R=initramfs-root
+          rm -rf "$R"; mkdir -p "$R"/{bin,sbin,proc,sys,dev,etc,tmp,usr/bin}
+          cp /usr/bin/busybox "$R/bin/busybox"
+          chmod +x "$R/bin/busybox"
+          for a in sh mount umount mkdir ls cat echo sleep dmesg mdev ln \
+                   ifconfig ip setsid head tail grep ps free; do
+            ln -sf busybox "$R/bin/$a"
+          done
+          cp initramfs/init "$R/init"
+          chmod +x "$R/init"
+          ln -sf init "$R/sbin/init"
+          printf 'root:x:0:0:root:/root:/bin/sh\n' > "$R/etc/passwd"
+          printf '::respawn:/bin/sh\n' > "$R/etc/inittab"
+          ( cd "$R" && find . | cpio -o -H newc --quiet | gzip -9 ) > initramfs.cpio.gz
+          ls -lh initramfs.cpio.gz
+
+      - name: Assemble boot.img (kernel + dtb + initramfs)
+        run: |
+          set -eo pipefail
+          # kernel image from the last CI kernel build is not available here,
+          # so build Image.gz too (cheap enough on a runner)
+          cd kernel-src
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- Image.gz -j"$(nproc)"
+          cp arch/arm64/boot/Image.gz ../
+          cd ..
+          python3 scripts/make-bootimg.py Image.gz msm8996-leeco-x2.dtb \
+            boot-initramfs.img --ramdisk initramfs.cpio.gz
+          ls -lh boot-initramfs.img
+          sha256sum boot-initramfs.img Image.gz initramfs.cpio.gz
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: x2-initramfs-${{ github.run_number }}
+          path: |
+            boot-initramfs.img
+            initramfs.cpio.gz
+            msm8996-leeco-x2.dtb
+          if-no-files-found: error
+          retention-days: 30
