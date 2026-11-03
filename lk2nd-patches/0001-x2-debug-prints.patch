@@ -1,12 +1,12 @@
 diff --git a/app/aboot/aboot.c b/app/aboot/aboot.c
-index b44a5c2..c8c319a 100644
+index b44a5c2..3989e55 100644
 --- a/app/aboot/aboot.c
 +++ b/app/aboot/aboot.c
 @@ -158,6 +158,8 @@ struct fastboot_cmd_desc {
  
  #define IS_ARM64(ptr) (ptr->magic_64 == KERNEL64_HDR_MAGIC) ? true : false
  
-+static void x2_screen_line(int row, const char *str);
++void x2_screen_line(int row, const char *str);
 +
  #define ADD_OF(a, b) (UINT_MAX - b > a) ? (a + b) : UINT_MAX
  
@@ -24,7 +24,7 @@ index b44a5c2..c8c319a 100644
  	if (IS_ARM64(kptr))
  		boot_type |= BOOT_ARM64;
  	if (strstr(cmdline, "androidboot"))
-@@ -1296,24 +1304,51 @@ tags_done:
+@@ -1296,24 +1304,50 @@ tags_done:
  	dprintf(INFO, "booting linux @ %p, ramdisk @ %p (%d), tags/device tree @ %p\n",
  		entry, ramdisk, ramdisk_size, (void *)tags_phys);
  
@@ -63,7 +63,6 @@ index b44a5c2..c8c319a 100644
 +	 * the EL1/EL2 state and drops the MMU itself during the 32->64 switch.
 +	 */
 +	dprintf(INFO, "x2dbg: entering monitor with MMU on\n");
-+	x2_screen_line(3, "calling TZ monitor...");
  	bs_set_timestamp(BS_KERNEL_ENTRY);
  
  	if (IS_ARM64(kptr))
@@ -82,7 +81,7 @@ index b44a5c2..c8c319a 100644
  }
  
  /* Function to check if the memory address range falls within the aboot
-@@ -3074,6 +3109,17 @@ int copy_dtb(uint8_t *boot_image_start, unsigned int scratch_offset)
+@@ -3074,6 +3108,17 @@ int copy_dtb(uint8_t *boot_image_start, unsigned int scratch_offset)
  	dt_size = hdr->dt_size;
  #endif
  
@@ -100,7 +99,7 @@ index b44a5c2..c8c319a 100644
  	if(dt_size != 0) {
  		/* add kernel offset */
  		dt_image_offset += page_size;
-@@ -3149,6 +3195,30 @@ int copy_dtb(uint8_t *boot_image_start, unsigned int scratch_offset)
+@@ -3149,6 +3194,55 @@ int copy_dtb(uint8_t *boot_image_start, unsigned int scratch_offset)
  }
  #endif
  
@@ -111,7 +110,32 @@ index b44a5c2..c8c319a 100644
 + * the kernel takes over. Draw short status lines at the bottom of the frame
 + * so the last visible line identifies how far the hand-off got.
 + */
-+static void x2_screen_line(int row, const char *str)
++void x2_screen_hex(int row, const char *label, unsigned val)
++{
++	char buf[40];
++	int n = 0;
++	const char *p = label;
++
++	while (*p && n < 20)
++		buf[n++] = *p++;
++	buf[n++] = ':';
++	buf[n++] = ' ';
++	{
++		int shift;
++		int started = 0;
++		for (shift = 28; shift >= 0; shift -= 4) {
++			unsigned d = (val >> shift) & 0xf;
++			if (d || started || shift == 0) {
++				buf[n++] = d < 10 ? ('0' + d) : ('a' + d - 10);
++				started = 1;
++			}
++		}
++	}
++	buf[n] = 0;
++	x2_screen_line(row, buf);
++}
++
++void x2_screen_line(int row, const char *str)
 +{
 +	struct fbcon_config *fb = fbcon_display();
 +	int x = 8, y;
@@ -131,7 +155,7 @@ index b44a5c2..c8c319a 100644
  void cmd_boot(const char *arg, void *data, unsigned sz)
  {
  	unsigned kernel_actual;
-@@ -3441,6 +3511,31 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
+@@ -3441,6 +3535,31 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
  	 */
  	if (!dtb_copied) {
  		void *dtb;
@@ -163,7 +187,7 @@ index b44a5c2..c8c319a 100644
  		dtb = dev_tree_appended((void*)(ptr + page_size),
  					hdr->kernel_size, dtb_offset,
  					(void *)hdr->tags_addr);
-@@ -3460,6 +3555,15 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
+@@ -3460,6 +3579,15 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
  	memmove((void*) hdr->ramdisk_addr, ptr + page_size + kernel_actual, hdr->ramdisk_size);
  	memmove((void*) hdr->kernel_addr, (char*) (kernel_start_addr), kernel_size);
  
@@ -179,7 +203,7 @@ index b44a5c2..c8c319a 100644
  	fastboot_okay("");
  	fastboot_stop();
  
-@@ -3469,6 +3573,7 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
+@@ -3469,6 +3597,7 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
  	thread_sleep(LK2ND_FASTBOOT_DELAY);
  	#endif
  
@@ -187,7 +211,7 @@ index b44a5c2..c8c319a 100644
  	boot_linux((void*) hdr->kernel_addr, (void*) hdr->tags_addr,
  		   (const char*) hdr->cmdline, board_machtype(),
  		   (void*) hdr->ramdisk_addr, hdr->ramdisk_size,
-@@ -3491,8 +3596,7 @@ void cmd_erase_nand(const char *arg, void *data, unsigned sz)
+@@ -3491,8 +3620,7 @@ void cmd_erase_nand(const char *arg, void *data, unsigned sz)
  
  	ptable = flash_get_ptable();
  	if (ptable == NULL) {
@@ -548,19 +572,29 @@ index 86757c0..87f5631 100644
  		*((uint32_t *)(kernel + app_dtb_offset)) = 0;
  		return tags;
 diff --git a/platform/msm_shared/scm.c b/platform/msm_shared/scm.c
-index 8c76083..4b9e77d 100644
+index 8c76083..0794881 100644
 --- a/platform/msm_shared/scm.c
 +++ b/platform/msm_shared/scm.c
-@@ -1060,6 +1060,8 @@ void scm_elexec_call(paddr_t kernel_entry, paddr_t dtb_offset)
+@@ -1059,7 +1059,18 @@ void scm_elexec_call(paddr_t kernel_entry, paddr_t dtb_offset)
+ 	param.el1_x0 = dtb_offset;
  	param.el1_elr = kernel_entry;
  
++	{
++		extern void x2_screen_hex(int, const char *, unsigned);
++		x2_screen_hex(2, "elr", (unsigned)param.el1_elr);
++		x2_screen_hex(3, "x0", (unsigned)param.el1_x0);
++		dprintf(INFO, "x2dbg: elexec elr=%x x0=%x armv8=%d\n",
++			(unsigned)param.el1_elr, (unsigned)param.el1_x0,
++			is_scm_armv8_support() ? 1 : 0);
++	}
++
  	/* Response Buffer = Null as no response expected */
 +	dprintf(INFO, "x2dbg: elexec param el1_x0=%p el1_elr=%p\n",
 +		(void*)param.el1_x0, (void*)param.el1_elr);
  	dprintf(INFO, "Jumping to kernel via monitor\n");
  
  	if (!is_scm_armv8_support())
-@@ -1081,6 +1083,7 @@ void scm_elexec_call(paddr_t kernel_entry, paddr_t dtb_offset)
+@@ -1081,6 +1092,7 @@ void scm_elexec_call(paddr_t kernel_entry, paddr_t dtb_offset)
  	}
  
  	/* Assert if execution ever reaches here */
