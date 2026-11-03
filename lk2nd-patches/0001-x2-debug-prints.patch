@@ -151,7 +151,7 @@ index b44a5c2..17a63b3 100644
  
  	ptn = ptable_find(ptable, arg);
 diff --git a/lib/debug/debug.c b/lib/debug/debug.c
-index 64ef6f6..92863f2 100644
+index 64ef6f6..0ed650c 100644
 --- a/lib/debug/debug.c
 +++ b/lib/debug/debug.c
 @@ -29,6 +29,8 @@
@@ -163,7 +163,7 @@ index 64ef6f6..92863f2 100644
  #include <arch/ops.h>
  #include <platform.h>
  #include <platform/debug.h>
-@@ -83,8 +85,139 @@ void _panic(void *caller, const char *fmt, ...)
+@@ -83,8 +85,96 @@ void _panic(void *caller, const char *fmt, ...)
  	halt();
  }
  
@@ -180,89 +180,46 @@ index 64ef6f6..92863f2 100644
 +#define X2_LKLOG_MAX	(100 * 1024)
 +#define X2_LKLOG_MAGIC	0x474F4B4C /* "LKOG" */
 +
++volatile bool x2_lklog_ready = false;
++
 +static void x2_lklog_char(char c)
 +{
-+	static bool mapped = false;
++	/*
++	 * Written ONLY once the static mapping for 0x91400000 is installed by
++	 * platform_init_mmu_mappings(). Calling lk2nd_mmu_map_ram_dynamic()
++	 * here was a mistake: _dputs() runs from the very first "welcome to lk"
++	 * message, long before the LPAE tables exist, so every single character
++	 * re-attempted the mapping and corrupted/hung early boot.
++	 *
++	 * A plain volatile store is enough now: the region is mapped
++	 * cacheable, so the markers are flushed explicitly where it matters
++	 * (x2_lklog_marker_raw / the lklog reader both clean the cache).
++	 */
 +	volatile uint32_t *hdr;
 +	volatile char *buf;
 +	uint32_t off;
 +
-+	if (!mapped) {
-+		/* Retry on every call: early dputs() runs before the MMU tables
-+		 * exist and lk2nd_mmu_map_ram_dynamic() fails then. Latching a
-+		 * failure would leave the whole log empty. */
-+		if (!lk2nd_mmu_map_ram_dynamic("x2 lklog", X2_LKLOG_BASE, 0x100000))
-+			return;
-+
-+		hdr = (volatile uint32_t *)X2_LKLOG_BASE;
-+		if (hdr[0] != X2_LKLOG_MAGIC) {
-+			hdr[0] = X2_LKLOG_MAGIC;
-+			hdr[1] = 0;
-+		}
-+		mapped = true;
-+	}
++	/*
++	 * Do not touch 0x91400000 until the platform MMU table is live -
++	 * writing an unmapped address faults and would hang early boot in
++	 * exactly the way that was just observed.
++	 */
++	if (!x2_lklog_ready)
++		return;
 +
 +	hdr = (volatile uint32_t *)X2_LKLOG_BASE;
 +	buf = (volatile char *)(X2_LKLOG_BASE + 16);
++
++	if (hdr[0] != X2_LKLOG_MAGIC) {
++		hdr[0] = X2_LKLOG_MAGIC;
++		hdr[1] = 0;
++		return;
++	}
 +	off = hdr[1];
 +	if (off >= X2_LKLOG_MAX)
 +		return;
 +	buf[off++] = c;
 +	hdr[1] = off;
-+}
-+
-+/*
-+ * Raw marker: used AFTER arch_disable_mmu(), when lk2nd_mmu_map_ram_dynamic()
-+ * is no longer callable. Identity mapping + caches off means a plain
-+ * physical write is safe.
-+ */
-+void x2_lklog_marker_raw(const char *tag)
-+{
-+	volatile uint32_t *hdr = (volatile uint32_t *)X2_LKLOG_BASE;
-+	volatile char *buf = (volatile char *)(X2_LKLOG_BASE + 16);
-+	uint32_t off = hdr[1];
-+	const char *p;
-+
-+	if (hdr[0] != X2_LKLOG_MAGIC) {
-+		hdr[0] = X2_LKLOG_MAGIC;
-+		off = 0;
-+	}
-+	for (p = tag; *p && off < X2_LKLOG_MAX - 1; p++)
-+		buf[off++] = *p;
-+	buf[off++] = '|';
-+	hdr[1] = off;
-+
-+	/*
-+	 * The lklog area is mapped cacheable, so without an explicit clean the
-+	 * bytes stay in L1/L2 and are lost on reset - which is why markers
-+	 * written right before the jump never showed up in a later session.
-+	 */
-+	arch_clean_invalidate_cache_range(X2_LKLOG_BASE, 16 + off);
-+}
-+
-+void x2_lklog_marker(const char *tag)
-+{
-+	volatile uint32_t *hdr;
-+	uint32_t off, n = 0;
-+	const char *p;
-+
-+	if (!lk2nd_mmu_map_ram_dynamic("x2 lklog", X2_LKLOG_BASE, 0x100000))
-+		return;
-+	hdr = (volatile uint32_t *)X2_LKLOG_BASE;
-+	if (hdr[0] != X2_LKLOG_MAGIC) {
-+		hdr[0] = X2_LKLOG_MAGIC;
-+		hdr[1] = 0;
-+	}
-+	off = hdr[1];
-+	/* markers survive independently of the text buffer limit */
-+	for (p = tag; *p && n < 32; p++, n++) {
-+		if (off + 1 >= X2_LKLOG_MAX)
-+			break;
-+		((volatile char *)(X2_LKLOG_BASE + 16))[off++] = *p;
-+	}
-+	((volatile char *)(X2_LKLOG_BASE + 16))[off++] = '|';
-+	hdr[1] = off;
-+	arch_clean_invalidate_cache_range(X2_LKLOG_BASE, 16 + off);
 +}
 +
 +static void x2_lklog_write(const char *str, size_t len)
@@ -303,7 +260,7 @@ index 64ef6f6..92863f2 100644
  	while(*str != 0) {
  		_dputc(*str++);
  	}
-@@ -94,6 +227,7 @@ int _dputs(const char *str)
+@@ -94,6 +184,7 @@ int _dputs(const char *str)
  
  static int _dprintf_output_func(char c, void *state)
  {
@@ -311,7 +268,7 @@ index 64ef6f6..92863f2 100644
  	_dputc(c);
  
  	return INT_MAX;
-@@ -383,3 +517,28 @@ static int cmd_memtest(int argc, const cmd_args *argv)
+@@ -383,3 +474,28 @@ static int cmd_memtest(int argc, const cmd_args *argv)
  
  #endif
   
@@ -390,7 +347,7 @@ index c8a2cc3..22d414c 100644
  #define ABOOT_FORCE_KERNEL64_ADDR    (DDR_START + 0x80000)
  #endif
 diff --git a/platform/msm8996/platform.c b/platform/msm8996/platform.c
-index 1fc7045..746c27c 100644
+index 1fc7045..ab929c5 100644
 --- a/platform/msm8996/platform.c
 +++ b/platform/msm8996/platform.c
 @@ -67,12 +67,41 @@ static uint64_t ddr_start;
@@ -441,7 +398,7 @@ index 1fc7045..746c27c 100644
  };
  
  /* Map the ddr for download mode, this region belongs to non-hlos images and pil */
-@@ -134,19 +163,64 @@ void platform_init_mmu_mappings(void)
+@@ -134,19 +163,68 @@ void platform_init_mmu_mappings(void)
  #endif
  	uint64_t ddr_size = smem_get_ddr_size();
  
@@ -509,6 +466,10 @@ index 1fc7045..746c27c 100644
 +			};
 +	}
 +
++	{
++		extern volatile bool x2_lklog_ready;
++		x2_lklog_ready = true;
++	}
 +	dprintf(INFO, "x2dbg: ddr_size=%llx ddr_start=%llx\n",
 +		(unsigned long long)ddr_size, (unsigned long long)ddr_start);
 +	{
@@ -518,7 +479,7 @@ index 1fc7045..746c27c 100644
  
  #if LPAE
  	kernel_mmu_section_table.paddress = ddr_start;
-@@ -208,7 +282,20 @@ addr_t platform_get_virt_to_phys_mapping(addr_t virt_addr)
+@@ -208,7 +286,20 @@ addr_t platform_get_virt_to_phys_mapping(addr_t virt_addr)
  addr_t platform_get_phys_to_virt_mapping(addr_t phys_addr)
  {
  #if LPAE
