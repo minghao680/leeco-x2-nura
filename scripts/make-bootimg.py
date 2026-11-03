@@ -30,10 +30,13 @@ BOARD = b""
 # pmOS-style cmdline for lk2nd devices: console resolution comes from the
 # DTB's chosen/stdout-path, no console= needed. earlycon uses the same path.
 # panic=15: auto-reboot on panic so crash loops don't need manual recovery.
-# lk2nd.pass-ramoops=zap: lk2nd injects its own ramoops reserved-memory into
-# the DTB; after a crash, `fastboot oem ramoops` reads the log directly
-# from lk2nd (no Android boot needed for the readback).
-CMDLINE = b"earlycon panic=15 lk2nd.pass-ramoops=zap"
+#
+# Do NOT add lk2nd.pass-ramoops=zap: it makes lk2nd rewrite the ramoops node
+# to lk2nd's own scratch area near 0xBFF00000 (and zap it), where the stock
+# 3.18 Android kernel cannot read it. Our DTS already places ramoops at
+# 0x91500000 with the exact layout 3.18 expects, so the kernel's pstore log
+# survives a crash and can be read back from Android/TWRP directly.
+CMDLINE = b"earlycon panic=15"
 
 
 def pad(data: bytes) -> bytes:
