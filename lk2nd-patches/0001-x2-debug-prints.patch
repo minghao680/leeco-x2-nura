@@ -152,7 +152,7 @@ index b44a5c2..f4149af 100644
  
  	ptn = ptable_find(ptable, arg);
 diff --git a/lib/debug/debug.c b/lib/debug/debug.c
-index 64ef6f6..ce27cc7 100644
+index 64ef6f6..a449893 100644
 --- a/lib/debug/debug.c
 +++ b/lib/debug/debug.c
 @@ -29,6 +29,8 @@
@@ -305,13 +305,13 @@ index 64ef6f6..ce27cc7 100644
  	_dputc(c);
  
  	return INT_MAX;
-@@ -383,3 +510,18 @@ static int cmd_memtest(int argc, const cmd_args *argv)
+@@ -383,3 +510,28 @@ static int cmd_memtest(int argc, const cmd_args *argv)
  
  #endif
   
 +
 +/* Publish the DDR decision as a fastboot variable for headless debugging. */
-+static char x2_ddr_str[48];
++static char x2_ddr_str[320];
 +static void x2_ddr_fastboot_register(void)
 +{
 +	fastboot_publish("x2ddr", x2_ddr_str);
@@ -323,6 +323,16 @@ index 64ef6f6..ce27cc7 100644
 +	snprintf(x2_ddr_str, sizeof(x2_ddr_str), "size=%llx,start=%llx",
 +		 (unsigned long long)size, (unsigned long long)start);
 +	dprintf(INFO, "x2dbg: %s\n", x2_ddr_str);
++}
++
++void x2_ddr_note(const char *tag, unsigned a)
++{
++	char tmp[120];
++	unsigned len = strlen(x2_ddr_str);
++
++	snprintf(tmp, sizeof(tmp), ";%s=%x", tag, a);
++	if (len + strlen(tmp) + 1 < sizeof(x2_ddr_str))
++		strcat(x2_ddr_str, tmp);
 +}
 diff --git a/lib/zlib_inflate/decompress.c b/lib/zlib_inflate/decompress.c
 index c51fb4d..37ab65a 100644
@@ -472,7 +482,7 @@ index 1fc7045..c1d2c31 100644
  	/* Using 1-1 mapping on this platform. */
  	return phys_addr;
 diff --git a/platform/msm_shared/dev_tree.c b/platform/msm_shared/dev_tree.c
-index 86757c0..a33cb0f 100644
+index 86757c0..faf6d8f 100644
 --- a/platform/msm_shared/dev_tree.c
 +++ b/platform/msm_shared/dev_tree.c
 @@ -1297,6 +1297,33 @@ void *dev_tree_appended(void *kernel, uint32_t kernel_size, uint32_t dtb_offset,
@@ -509,6 +519,21 @@ index 86757c0..a33cb0f 100644
  	/* Check for dtbo support */
  #if !DTBO_DISABLED
  	ret = dev_tree_appended_with_dtbo(kernel, kernel_size, app_dtb_offset, tags);
+@@ -1321,6 +1348,14 @@ void *dev_tree_appended(void *kernel, uint32_t kernel_size, uint32_t dtb_offset,
+ 		return NULL;
+ 	}
+ 	dtb = (void *)((uintptr_t)kernel + app_dtb_offset);
++	{
++		extern void x2_ddr_note(const char *, unsigned);
++		unsigned char *bb = (unsigned char *)dtb;
++		x2_ddr_note("off", app_dtb_offset);
++		x2_ddr_note("m0", ((unsigned)bb[0] << 24) | ((unsigned)bb[1] << 16) |
++				   ((unsigned)bb[2] << 8) | bb[3]);
++		x2_ddr_note("ksize", kernel_size);
++	}
+ 
+ 	while (((uintptr_t)dtb + sizeof(struct fdt_header)) < (uintptr_t)kernel_end) {
+ 		struct fdt_header dtb_hdr __ALIGNED(8);
 diff --git a/platform/msm_shared/scm.c b/platform/msm_shared/scm.c
 index 8c76083..66d9426 100644
 --- a/platform/msm_shared/scm.c
