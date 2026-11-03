@@ -26,7 +26,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            busybox-static cpio python3 bc bison flex device-tree-compiler
+            busybox-static cpio python3 bc bison flex device-tree-compiler gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu libssl-dev libelf-dev
 
       - name: Build x2 dtb
         run: |
