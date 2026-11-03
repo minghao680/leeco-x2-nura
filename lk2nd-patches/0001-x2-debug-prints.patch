@@ -1,5 +1,5 @@
 diff --git a/app/aboot/aboot.c b/app/aboot/aboot.c
-index b44a5c2..1544e40 100644
+index b44a5c2..9568a96 100644
 --- a/app/aboot/aboot.c
 +++ b/app/aboot/aboot.c
 @@ -1296,16 +1296,22 @@ tags_done:
@@ -49,6 +49,104 @@ index b44a5c2..1544e40 100644
  	boot_linux((void*) hdr->kernel_addr, (void*) hdr->tags_addr,
  		   (const char*) hdr->cmdline, board_machtype(),
  		   (void*) hdr->ramdisk_addr, hdr->ramdisk_size,
+@@ -3491,8 +3507,7 @@ void cmd_erase_nand(const char *arg, void *data, unsigned sz)
+ 
+ 	ptable = flash_get_ptable();
+ 	if (ptable == NULL) {
+-		fastboot_fail("partition table doesn't exist");
+-		return;
++		fastboot_fail("partition table doesn't exist");		return;
+ 	}
+ 
+ 	ptn = ptable_find(ptable, arg);
+diff --git a/lib/debug/debug.c b/lib/debug/debug.c
+index 64ef6f6..6e255ad 100644
+--- a/lib/debug/debug.c
++++ b/lib/debug/debug.c
+@@ -29,6 +29,8 @@
+ #include <printf.h>
+ #include <list.h>
+ #include <string.h>
++#include <fastboot.h>
++#include <lk2nd/util/mmu.h>
+ #include <arch/ops.h>
+ #include <platform.h>
+ #include <platform/debug.h>
+@@ -83,8 +85,74 @@ void _panic(void *caller, const char *fmt, ...)
+ 	halt();
+ }
+ 
++/*
++ * x2 debug: mirror all LK console output into the stock kernel's pstore
++ * console-ramoops buffer at 0x915A0000 (console prz of the 1 MiB ramoops
++ * region the vendor 3.18 kernel reads; survives warm resets). This makes
++ * lk2nd's last words readable even when the crash kills the USB session -
++ * read it back by booting lk2nd again and running `fastboot oem log` on a
++ * NEW session (we also re-emit the buffer there), or from Android pstore.
++ * Header: "LKLOG" + write offset, then raw text up to 100 KiB.
++ */
++#define X2_LKLOG_BASE	0x915A0000UL
++#define X2_LKLOG_MAX	(100 * 1024)
++#define X2_LKLOG_MAGIC	0x474F4B4C /* "LKOG" */
++
++static void x2_lklog_write(const char *str, size_t len)
++{
++	static bool mapped = false;
++	volatile uint32_t *hdr;
++	volatile char *buf;
++	uint32_t off;
++
++	/*
++	 * 0x915A0000 is not in the default msm8996 MMU table (MEMBASE covers
++	 * only 0x91D00000+4M, SCRATCH starts at 0x92300000), so map it first -
++	 * an unmapped write faults and would kill lk2nd itself.
++	 */
++	if (!mapped) {
++		if (!lk2nd_mmu_map_ram_dynamic("x2 lklog", X2_LKLOG_BASE,
++					  ALIGN(X2_LKLOG_MAX + 16, 0x100000)))
++			return;
++		hdr = (volatile uint32_t *)X2_LKLOG_BASE;
++		if (hdr[0] != X2_LKLOG_MAGIC) {
++			hdr[0] = X2_LKLOG_MAGIC;
++			hdr[1] = 0;
++		}
++		mapped = true;
++	}
++
++	hdr = (volatile uint32_t *)X2_LKLOG_BASE;
++	buf = (volatile char *)(X2_LKLOG_BASE + 16);
++	off = hdr[1];
++	if (off > X2_LKLOG_MAX)
++		return;
++	if (off + len > X2_LKLOG_MAX)
++		len = X2_LKLOG_MAX - off;
++
++	while (len--)
++		buf[off++] = *str++;
++	hdr[1] = off;
++}
++
++static void cmd_oem_lklog(const char *arg, void *data, unsigned sz)
++{
++	volatile uint32_t *hdr = (volatile uint32_t *)X2_LKLOG_BASE;
++	uint32_t off = hdr[1];
++
++	if (hdr[0] != X2_LKLOG_MAGIC || off == 0 || off > X2_LKLOG_MAX) {
++		fastboot_fail("no lklog in ramoops");
++		return;
++	}
++	arch_clean_invalidate_cache_range(X2_LKLOG_BASE, 16 + off);
++	fastboot_stage((void *)(X2_LKLOG_BASE + 16), off);
++}
++FASTBOOT_REGISTER("oem lklog", cmd_oem_lklog);
++
+ int _dputs(const char *str)
+ {
++	x2_lklog_write(str, strlen(str));
++
+ 	while(*str != 0) {
+ 		_dputc(*str++);
+ 	}
 diff --git a/platform/msm_shared/scm.c b/platform/msm_shared/scm.c
 index 8c76083..4b9e77d 100644
 --- a/platform/msm_shared/scm.c
