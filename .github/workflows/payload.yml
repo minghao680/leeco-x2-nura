@@ -80,6 +80,18 @@ jobs:
           print('header OK, size', len(d))
           EOF
 
+      - name: Assemble minimal reset probe
+        run: |
+          set -eo pipefail
+          cd payload
+          aarch64-linux-gnu-gcc -c minimal.S -o minimal.o -nostdlib
+          aarch64-linux-gnu-objcopy -O binary minimal.o minimal.bin
+          gzip -9c minimal.bin > minimal.gz
+          aarch64-linux-gnu-objdump -d minimal.o | head -20
+          cd ..
+          python3 scripts/make-bootimg.py payload/minimal.gz             msm8996-leeco-x2.dtb boot-minimal.img
+          ls -l boot-minimal.img
+
       - name: Wrap into boot.img
         run: |
           set -eo pipefail
@@ -97,5 +109,7 @@ jobs:
             payload/disasm.txt
             msm8996-leeco-x2.dtb
             boot-payload.img
+            boot-minimal.img
+            payload/minimal.gz
           if-no-files-found: error
           retention-days: 30
