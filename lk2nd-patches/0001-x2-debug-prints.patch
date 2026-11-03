@@ -310,10 +310,10 @@ index c8a2cc3..22d414c 100644
  #define ABOOT_FORCE_KERNEL64_ADDR    (DDR_START + 0x80000)
  #endif
 diff --git a/platform/msm8996/platform.c b/platform/msm8996/platform.c
-index 1fc7045..746c27c 100644
+index 1fc7045..7de0c25 100644
 --- a/platform/msm8996/platform.c
 +++ b/platform/msm8996/platform.c
-@@ -67,12 +67,41 @@ static uint64_t ddr_start;
+@@ -67,12 +67,49 @@ static uint64_t ddr_start;
  static mmu_section_t default_mmu_section_table[] =
  {
  /*       Physical addr,    Virtual addr,     Mapping type ,              Size (in MB),            Flags */
@@ -356,12 +356,20 @@ index 1fc7045..746c27c 100644
 +	/* x2 debug lklog area (pstore console prz). L2 section mappings are
 +	 * 2MB-granular, so map the 2MB window that contains 0x915A0000. */
 +	{    0x91400000,        0x91400000,       MMU_L2_NS_SECTION_MAPPING,  2,                   LK_MEMORY},
++	/*
++	 * 0x916C0000-0x91700000: the vendor TZ reads the elexec parameter
++	 * block from this fixed physical address (it sits in the vendor
++	 * bootloader's .bss). Map it so scm_elexec_call() can actually write
++	 * the el1_x0/el1_elr values - an unmapped store faults and lk2nd dies
++	 * before the SCM call is ever issued.
++	 */
++	{    0x916C0000,        0x916C0000,       MMU_L2_NS_SECTION_MAPPING,  2,                   LK_MEMORY},
 +	{    MSM_SHARED_BASE,   MSM_SHARED_BASE,  MMU_L2_NS_SECTION_MAPPING,  MSM_SHARED_SIZE,     COMMON_MEMORY},
 +	{    RPMB_SND_RCV_BUF,  RPMB_SND_RCV_BUF, MMU_L2_NS_SECTION_MAPPING,  RPMB_SND_RCV_BUF_SZ, IOMAP_MEMORY},
  };
  
  /* Map the ddr for download mode, this region belongs to non-hlos images and pil */
-@@ -134,19 +163,64 @@ void platform_init_mmu_mappings(void)
+@@ -134,19 +171,64 @@ void platform_init_mmu_mappings(void)
  #endif
  	uint64_t ddr_size = smem_get_ddr_size();
  
@@ -438,7 +446,7 @@ index 1fc7045..746c27c 100644
  
  #if LPAE
  	kernel_mmu_section_table.paddress = ddr_start;
-@@ -208,7 +282,20 @@ addr_t platform_get_virt_to_phys_mapping(addr_t virt_addr)
+@@ -208,7 +290,20 @@ addr_t platform_get_virt_to_phys_mapping(addr_t virt_addr)
  addr_t platform_get_phys_to_virt_mapping(addr_t phys_addr)
  {
  #if LPAE
@@ -569,7 +577,7 @@ index 86757c0..87f5631 100644
  		*((uint32_t *)(kernel + app_dtb_offset)) = 0;
  		return tags;
 diff --git a/platform/msm_shared/scm.c b/platform/msm_shared/scm.c
-index 8c76083..80be525 100644
+index 8c76083..34cd084 100644
 --- a/platform/msm_shared/scm.c
 +++ b/platform/msm_shared/scm.c
 @@ -120,6 +120,12 @@ void scm_init(void)
@@ -585,7 +593,7 @@ index 8c76083..80be525 100644
  	if (ret < 0)
  		dprintf(CRITICAL, "Failed to initialize SCM\n");
  
-@@ -1049,42 +1055,69 @@ int scm_halt_pmic_arbiter(void)
+@@ -1049,42 +1055,74 @@ int scm_halt_pmic_arbiter(void)
  
  void scm_elexec_call(paddr_t kernel_entry, paddr_t dtb_offset)
  {
@@ -654,9 +662,14 @@ index 8c76083..80be525 100644
 +		(unsigned)kernel_entry, (unsigned)dtb_offset);
 +
 +	if (!is_scm_armv8_support()) {
-+		/* legacy: the vendor passes buf=NULL, len=0x50 and keeps the
-+		 * param block at a fixed address the TZ already knows */
-+		scm_call(1, 0xf, NULL, 0x50, NULL, 0);
++		/*
++		 * legacy: the vendor passes buf=NULL (its param block lives at
++		 * the fixed 0x916C0000 both sides know). We write our copy there
++		 * too, but pass the real pointer as well - if this TZ wants the
++		 * standard struct-based call it will use it, and if it reads the
++		 * fixed address the content is identical anyway.
++		 */
++		scm_call(1, 0xf, x2_param, 0x50, NULL, 0);
 +	} else {
 +		scmcall_arg scm_arg = {0};
 +		scm_arg.x0 = 0x0200010F;                 /* SIP(1,0xf)   */
