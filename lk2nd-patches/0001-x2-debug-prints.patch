@@ -482,44 +482,57 @@ index 1fc7045..c1d2c31 100644
  	/* Using 1-1 mapping on this platform. */
  	return phys_addr;
 diff --git a/platform/msm_shared/dev_tree.c b/platform/msm_shared/dev_tree.c
-index 86757c0..faf6d8f 100644
+index 86757c0..e238f0e 100644
 --- a/platform/msm_shared/dev_tree.c
 +++ b/platform/msm_shared/dev_tree.c
-@@ -1297,6 +1297,33 @@ void *dev_tree_appended(void *kernel, uint32_t kernel_size, uint32_t dtb_offset,
+@@ -1297,6 +1297,46 @@ void *dev_tree_appended(void *kernel, uint32_t kernel_size, uint32_t dtb_offset,
  	else
  		memcpy((void*) &app_dtb_offset, (void*) (kernel + DTB_OFFSET), sizeof(uint32_t));
  
 +	/*
-+	 * x2: decompress() reports the compressed-stream end, which lands a
-+	 * few bytes inside the appended DTB (gzip trailer/padding). Verify the
-+	 * FDT magic there and, if it is wrong, scan the whole kernel blob.
-+	 * Without this the single-DTB fallback below copies from the wrong
-+	 * offset: tags_addr ends up with magic 0x00000001 and
-+	 * update_device_tree() panics with "Invalid device tree header".
++	 * x2: locate the appended DTB by validated reverse scan.
++	 *
++	 * decompress() reports the gzip stream end; the DTB is appended after
++	 * the 8-byte gzip trailer, so the reported offset points into the
++	 * trailer and fdt_check_header() fails -> dtb_count stays 0, the
++	 * single-DTB fallback never fires and fdt boot dies with
++	 * "dtb not found".
++	 *
++	 * Scan backwards from the end of the blob and accept only a header
++	 * that passes fdt_check_header() and whose totalsize fits inside the
++	 * blob. Reverse order avoids false positives inside the compressed
++	 * kernel payload.
 +	 */
 +	{
 +		const unsigned char *b = (const unsigned char *)kernel;
-+		uint32_t i;
++		int32_t i;
 +
-+		if (kernel_size < 16 ||
-+		    !(b[app_dtb_offset] == 0xd0 && b[app_dtb_offset+1] == 0x0d &&
-+		      b[app_dtb_offset+2] == 0xfe && b[app_dtb_offset+3] == 0xed)) {
-+			for (i = 0; i + 8 <= kernel_size; i += 4) {
-+				if (b[i] == 0xd0 && b[i+1] == 0x0d &&
-+				    b[i+2] == 0xfe && b[i+3] == 0xed) {
-+					dprintf(INFO, "x2dbg: dev_tree_appended: FDT at +0x%x (offset said 0x%x)\n",
-+						i, app_dtb_offset);
-+					app_dtb_offset = i;
-+					break;
-+				}
-+			}
++		for (i = (int32_t)kernel_size - 4; i >= 0; i -= 4) {
++			struct fdt_header h;
++			uint32_t total;
++
++			if (!(b[i] == 0xd0 && b[i+1] == 0x0d &&
++			      b[i+2] == 0xfe && b[i+3] == 0xed))
++				continue;
++			if ((uint32_t)i + sizeof(h) > kernel_size)
++				continue;
++			memcpy(&h, b + i, sizeof(h));
++			if (fdt_check_header(&h) != 0)
++				continue;
++			total = fdt_totalsize(&h);
++			if (total < sizeof(h) || (uint32_t)i + total > kernel_size)
++				continue;
++			app_dtb_offset = (uint32_t)i;
++			dprintf(INFO, "x2dbg: appended DTB found at +0x%x (size 0x%x)\n",
++				i, total);
++			break;
 +		}
 +	}
 +
  	/* Check for dtbo support */
  #if !DTBO_DISABLED
  	ret = dev_tree_appended_with_dtbo(kernel, kernel_size, app_dtb_offset, tags);
-@@ -1321,6 +1348,14 @@ void *dev_tree_appended(void *kernel, uint32_t kernel_size, uint32_t dtb_offset,
+@@ -1321,6 +1361,14 @@ void *dev_tree_appended(void *kernel, uint32_t kernel_size, uint32_t dtb_offset,
  		return NULL;
  	}
  	dtb = (void *)((uintptr_t)kernel + app_dtb_offset);
