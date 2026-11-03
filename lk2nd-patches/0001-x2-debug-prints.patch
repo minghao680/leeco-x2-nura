@@ -152,7 +152,7 @@ index b44a5c2..f4149af 100644
  
  	ptn = ptable_find(ptable, arg);
 diff --git a/lib/debug/debug.c b/lib/debug/debug.c
-index 64ef6f6..a449893 100644
+index 64ef6f6..92863f2 100644
 --- a/lib/debug/debug.c
 +++ b/lib/debug/debug.c
 @@ -29,6 +29,8 @@
@@ -164,7 +164,7 @@ index 64ef6f6..a449893 100644
  #include <arch/ops.h>
  #include <platform.h>
  #include <platform/debug.h>
-@@ -83,8 +85,132 @@ void _panic(void *caller, const char *fmt, ...)
+@@ -83,8 +85,139 @@ void _panic(void *caller, const char *fmt, ...)
  	halt();
  }
  
@@ -232,6 +232,13 @@ index 64ef6f6..a449893 100644
 +		buf[off++] = *p;
 +	buf[off++] = '|';
 +	hdr[1] = off;
++
++	/*
++	 * The lklog area is mapped cacheable, so without an explicit clean the
++	 * bytes stay in L1/L2 and are lost on reset - which is why markers
++	 * written right before the jump never showed up in a later session.
++	 */
++	arch_clean_invalidate_cache_range(X2_LKLOG_BASE, 16 + off);
 +}
 +
 +void x2_lklog_marker(const char *tag)
@@ -297,7 +304,7 @@ index 64ef6f6..a449893 100644
  	while(*str != 0) {
  		_dputc(*str++);
  	}
-@@ -94,6 +220,7 @@ int _dputs(const char *str)
+@@ -94,6 +227,7 @@ int _dputs(const char *str)
  
  static int _dprintf_output_func(char c, void *state)
  {
@@ -305,7 +312,7 @@ index 64ef6f6..a449893 100644
  	_dputc(c);
  
  	return INT_MAX;
-@@ -383,3 +510,28 @@ static int cmd_memtest(int argc, const cmd_args *argv)
+@@ -383,3 +517,28 @@ static int cmd_memtest(int argc, const cmd_args *argv)
  
  #endif
   
