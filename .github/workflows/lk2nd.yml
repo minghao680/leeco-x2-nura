@@ -35,6 +35,23 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/msm8916-mainline/lk2nd.git lk2nd-src
 
+      - name: Apply x2 debug patches (if present)
+        run: |
+          # Debug probe builds: apply the local patch series onto upstream.
+          # Files under lk2nd-patches/ are optional; the workflow still works
+          # when the directory is empty or removed.
+          if compgen -G "lk2nd-patches/*.patch" > /dev/null; then
+            cd lk2nd-src
+            for p in ../lk2nd-patches/*.patch; do
+              echo "=== applying $p ==="
+              git apply --stat "$p"
+              git apply "$p"
+            done
+            cd ..
+          else
+            echo "no lk2nd patches, building upstream as-is"
+          fi
+
       - name: Add Le Max 2 device tree
         run: |
           set -e

@@ -1,0 +1,72 @@
+diff --git a/app/aboot/aboot.c b/app/aboot/aboot.c
+index b44a5c2..1544e40 100644
+--- a/app/aboot/aboot.c
++++ b/app/aboot/aboot.c
+@@ -1296,16 +1296,22 @@ tags_done:
+ 	dprintf(INFO, "booting linux @ %p, ramdisk @ %p (%d), tags/device tree @ %p\n",
+ 		entry, ramdisk, ramdisk_size, (void *)tags_phys);
+ 
++	dprintf(INFO, "x2dbg: boot_linux pre-uninit: entry=%p tags=%p\n", entry, (void*)tags_phys);
+ 	enter_critical_section();
+ 
+ 	/* do any platform specific cleanup before kernel entry */
+ 	platform_uninit();
+ 
++	dprintf(INFO, "x2dbg: platform_uninit done\n");
++
+ 	arch_disable_cache(UCACHE);
+ 
++	dprintf(INFO, "x2dbg: cache disabled\n");
++
+ #if ARM_WITH_MMU
+ 	arch_disable_mmu();
+ #endif
++	dprintf(INFO, "x2dbg: mmu disabled, calling monitor next\n");
+ 	bs_set_timestamp(BS_KERNEL_ENTRY);
+ 
+ 	if (IS_ARM64(kptr))
+@@ -3460,6 +3466,15 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
+ 	memmove((void*) hdr->ramdisk_addr, ptr + page_size + kernel_actual, hdr->ramdisk_size);
+ 	memmove((void*) hdr->kernel_addr, (char*) (kernel_start_addr), kernel_size);
+ 
++	/* x2 debug: prove the payload/kernel bytes landed where lk2nd says */
++	dprintf(INFO, "x2dbg: kernel staged @ %p (%u bytes), first words: %08x %08x %08x %08x\n",
++		(void*)hdr->kernel_addr, kernel_size,
++		*((uint32_t*)hdr->kernel_addr), *((uint32_t*)hdr->kernel_addr + 1),
++		*((uint32_t*)hdr->kernel_addr + 2), *((uint32_t*)hdr->kernel_addr + 3));
++	dprintf(INFO, "x2dbg: dtb @ %p, magic %08x, total %u\n",
++		(void*)hdr->tags_addr, *((uint32_t*)hdr->tags_addr),
++		fdt_totalsize((void*)hdr->tags_addr));
++
+ 	fastboot_okay("");
+ 	fastboot_stop();
+ 
+@@ -3469,6 +3484,7 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
+ 	thread_sleep(LK2ND_FASTBOOT_DELAY);
+ 	#endif
+ 
++	dprintf(INFO, "x2dbg: entering boot_linux\n");
+ 	boot_linux((void*) hdr->kernel_addr, (void*) hdr->tags_addr,
+ 		   (const char*) hdr->cmdline, board_machtype(),
+ 		   (void*) hdr->ramdisk_addr, hdr->ramdisk_size,
+diff --git a/platform/msm_shared/scm.c b/platform/msm_shared/scm.c
+index 8c76083..4b9e77d 100644
+--- a/platform/msm_shared/scm.c
++++ b/platform/msm_shared/scm.c
+@@ -1060,6 +1060,8 @@ void scm_elexec_call(paddr_t kernel_entry, paddr_t dtb_offset)
+ 	param.el1_elr = kernel_entry;
+ 
+ 	/* Response Buffer = Null as no response expected */
++	dprintf(INFO, "x2dbg: elexec param el1_x0=%p el1_elr=%p\n",
++		(void*)param.el1_x0, (void*)param.el1_elr);
+ 	dprintf(INFO, "Jumping to kernel via monitor\n");
+ 
+ 	if (!is_scm_armv8_support())
+@@ -1081,6 +1083,7 @@ void scm_elexec_call(paddr_t kernel_entry, paddr_t dtb_offset)
+ 	}
+ 
+ 	/* Assert if execution ever reaches here */
++	dprintf(CRITICAL, "x2dbg: RETURNED FROM MONITOR - jump failed\n");
+ 	dprintf(CRITICAL, "Failed to jump to kernel\n");
+ 	ASSERT(0);
+ }
