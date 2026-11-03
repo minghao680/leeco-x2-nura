@@ -31,12 +31,14 @@
 
 		volume-up {
 			lk2nd,code = <KEY_VOLUMEUP>;
-			gpios = <&pmic 3 GPIO_ACTIVE_LOW>;
-		};
-
-		volume-down {
-			lk2nd,code = <KEY_VOLUMEDOWN>;
+			/* vendor mtp-le-common.dtsi:710 - vol_up is pm8994 gpio2.
+			 * gpio3 was wrong: it floats low on x2, so lk2nd saw
+			 * "volume up pressed" at every boot and force-booted the
+			 * recovery partition instead of the passed kernel. */
 			gpios = <&pmic 2 GPIO_ACTIVE_LOW>;
 		};
+
+		/* x2 has no second gpio volume key (vol-down is the resin
+		 * power-on key), so nothing else to map here. */
 	};
 };

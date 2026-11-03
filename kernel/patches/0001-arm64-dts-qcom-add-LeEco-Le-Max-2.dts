@@ -27,8 +27,12 @@
 #include "pmi8996.dtsi"
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/input/input.h>
+#include <dt-bindings/input/ti-drv260x.h>
 #include <dt-bindings/interrupt-controller/irq.h>
 #include <dt-bindings/pinctrl/qcom,pmic-gpio.h>
+#include <dt-bindings/sound/qcom,q6afe.h>
+#include <dt-bindings/sound/qcom,q6asm.h>
+#include <dt-bindings/sound/qcom,wcd9335.h>
 
 / {
 	model = "LeEco Le Max 2";
@@ -54,7 +58,8 @@
 		key-vol-up {
 			label = "Volume Up";
 			linux,code = <KEY_VOLUMEUP>;
-			gpios = <&pm8994_gpios 3 GPIO_ACTIVE_LOW>;
+			/* vendor mtp-le-common.dtsi:710 - vol_up is pm8994 gpio2 */
+			gpios = <&pm8994_gpios 2 GPIO_ACTIVE_LOW>;
 		};
 	};
 
@@ -144,6 +149,25 @@
 			regulator-min-microvolt = <925000>;
 			regulator-max-microvolt = <925000>;
 		};
+
+		/* rails for peripherals: touch (l14/l22), usb dpdm (l24) */
+		vreg_l14a_1p8: l14 {
+			regulator-name = "vreg_l14a_1p8";
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <1800000>;
+		};
+
+		vreg_l22a_3p3: l22 {
+			regulator-name = "vreg_l22a_3p3";
+			regulator-min-microvolt = <3300000>;
+			regulator-max-microvolt = <3300000>;
+		};
+
+		vreg_l24a_3p075: l24 {
+			regulator-name = "vreg_l24a_3p075";
+			regulator-min-microvolt = <3075000>;
+			regulator-max-microvolt = <3075000>;
+		};
 	};
 };
 
@@ -179,7 +203,7 @@
 /* Volume keys live on PMIC GPIOs */
 &pm8994_gpios {
 	vol_up_pin_a: vol-up-state {
-		pins = "gpio3";
+		pins = "gpio2";
 		function = PMIC_GPIO_FUNC_NORMAL;
 		bias-pull-up;
 		input-enable;
@@ -289,4 +313,331 @@
 	status = "okay";
 
 	vdda-supply = <&vreg_l2a_1p25>;
+};
+
+/*
+ * ======== Peripherals (vendor evidence in docs/peripherals-dts-notes.md) ========
+ */
+
+/ {
+	/* BT sleep clock: PM8994 GPIO18 func2 = 32.768kHz output
+	 * (vendor mtp-le-common.dtsi gpio@d100 "Rome Sleep Clock"). */
+	divclk4: div4-clk {
+		compatible = "fixed-clock";
+		pinctrl-names = "default";
+		pinctrl-0 = <&divclk4_pin_a>;
+		#clock-cells = <0>;
+		clock-frequency = <32768>;
+		clock-output-names = "divclk4";
+	};
+
+	/* WCD9335 master clock: PM8994 GPIO15 func1 gates RPM_SMD_DIV_CLK1
+	 * (vendor gpio@ce00, mclk 9.6MHz). */
+	div1_mclk: divclk1 {
+		compatible = "gpio-gate-clock";
+		pinctrl-names = "default";
+		pinctrl-0 = <&audio_mclk>;
+		clocks = <&rpmcc RPM_SMD_DIV_CLK1>;
+		#clock-cells = <0>;
+		enable-gpios = <&pm8994_gpios 15 GPIO_ACTIVE_HIGH>;
+	};
+
+	/* QCA6174 WLAN_EN: PM8994 GPIO8 (vendor gpio@c700, vin = S4 1.8V). */
+	wlan_en: wlan-en-regulator {
+		compatible = "regulator-fixed";
+		pinctrl-names = "default";
+		pinctrl-0 = <&wlan_en_gpios>;
+		regulator-name = "wlan-en-regulator";
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+
+		gpio = <&pm8994_gpios 8 GPIO_ACTIVE_HIGH>;
+
+		startup-delay-us = <70000>;
+		enable-active-high;
+	};
+};
+
+/* WiFi: QCA6174 on PCIe0 (ath10k_pci). PERST=GPIO35, CLKREQ=36, WAKE=37
+ * are wired by the dtsi pcie0 pin groups. */
+&pcie0 {
+	status = "okay";
+
+	perst-gpios = <&tlmm 35 GPIO_ACTIVE_LOW>;
+	vddpe-3v3-supply = <&wlan_en>;
+	vdda-supply = <&vreg_l28a_0p925>;
+};
+
+&pcie_phy {
+	status = "okay";
+
+	vdda-phy-supply = <&vreg_l28a_0p925>;
+	vdda-pll-supply = <&vreg_l12a_1p8>;
+};
+
+/*
+ * Bluetooth: QCA Rome (qca6174) on BLSP1 UART2 (serial@7570000, gpio41-44).
+ * BT_EN = PM8994 GPIO19. The console is blsp2_uart2 (gpio4/5) - no clash.
+ */
+&blsp1_uart2 {
+	uart-has-rtscts;
+	status = "okay";
+
+	bluetooth {
+		compatible = "qcom,qca6174-bt";
+
+		enable-gpios = <&pm8994_gpios 19 GPIO_ACTIVE_HIGH>;
+
+		clocks = <&divclk4>;
+	};
+};
+
+/*
+ * Touchscreen: Atmel mXT (T100) @0x4a on BLSP2 QUP6 (gpio87/88).
+ * Vendor: IRQ = GPIO125 level-low, RESET = GPIO89, AVDD = l22 (3.3V),
+ * VDD_IO = l14 (1.8V).
+ */
+&blsp2_i2c6 {
+	status = "okay";
+
+	touchscreen@4a {
+		compatible = "atmel,maxtouch";
+		reg = <0x4a>;
+
+		interrupt-parent = <&tlmm>;
+		interrupts = <125 IRQ_TYPE_LEVEL_LOW>;
+		reset-gpios = <&tlmm 89 GPIO_ACTIVE_LOW>;
+
+		vdda-supply = <&vreg_l22a_3p3>;
+		vdd-supply = <&vreg_l14a_1p8>;
+
+		pinctrl-names = "default", "sleep";
+		pinctrl-0 = <&touch_active>;
+		pinctrl-1 = <&touch_suspend>;
+	};
+};
+
+/* Vibration: TI DRV2604L @0x5a on BLSP2 QUP3 (gpio51/52), enable GPIO38,
+ * LRA actuator, rated 1600mV / overdrive 2600mV (vendor dvt1 dtsi). */
+&blsp2_i2c3 {
+	status = "okay";
+
+	drv2604l@5a {
+		compatible = "ti,drv2604l";
+		reg = <0x5a>;
+
+		enable-gpios = <&tlmm 38 GPIO_ACTIVE_HIGH>;
+		mode = <DRV260X_LRA_NO_CAL_MODE>;
+		library-sel = <DRV260X_LIB_EMPTY>;
+		vib-rated-mv = <1600>;
+		vib-overdrive-mv = <2600>;
+	};
+};
+
+/* Speaker amp: NXP TFA9890 @0x34 on BLSP2 QUP2 (gpio6/7). The mainline
+ * tfa989x driver needs neither the vendor IRQ(122)/reset(90) gpios nor a
+ * supply. No mainline 8996 sound card links it yet - speaker stays dead
+ * until card work is done; headphones route via the WCD. */
+&blsp2_i2c2 {
+	status = "okay";
+
+	tfa9890@34 {
+		compatible = "nxp,tfa9890";
+		reg = <0x34>;
+		#sound-dai-cells = <0>;
+	};
+};
+
+/*
+ * Audio: WCD9335 (tasha) on SLIMbus NGD. Codec elemental addr 00 01 A0 01
+ * 17 02 == slim217,1a0 reg <1 0>; all static supplies = s4 1.8V; reset =
+ * GPIO64, intr1 = GPIO54. Requires adsp firmware for the Q6 dais.
+ */
+&adsp_pil {
+	status = "okay";
+};
+
+&slim_msm {
+	status = "okay";
+
+	slim@1 {
+		reg = <1>;
+		#address-cells = <2>;
+		#size-cells = <0>;
+
+		tasha_ifd: tas-ifd@0,0 {
+			compatible = "slim217,1a0";
+			reg = <0 0>;
+		};
+
+		wcd9335: codec@1,0 {
+			compatible = "slim217,1a0";
+			reg = <1 0>;
+
+			clock-names = "mclk", "slimbus";
+			clocks = <&div1_mclk>,
+				 <&rpmcc RPM_SMD_BB_CLK1>;
+			interrupt-parent = <&tlmm>;
+			interrupts = <54 IRQ_TYPE_LEVEL_HIGH>;
+			interrupt-names = "intr1";
+
+			pinctrl-0 = <&cdc_reset_active &wcd_intr_default>;
+			pinctrl-names = "default";
+
+			reset-gpios = <&tlmm 64 GPIO_ACTIVE_LOW>;
+			slim-ifc-dev = <&tasha_ifd>;
+
+			#sound-dai-cells = <1>;
+
+			vdd-buck-supply = <&vreg_s4a_1p8>;
+			vdd-buck-sido-supply = <&vreg_s4a_1p8>;
+			vdd-tx-supply = <&vreg_s4a_1p8>;
+			vdd-rx-supply = <&vreg_s4a_1p8>;
+			vdd-io-supply = <&vreg_s4a_1p8>;
+		};
+	};
+};
+
+&sound {
+	compatible = "qcom,apq8096-sndcard";
+	model = "LeEco-Le-Max-2";
+	audio-routing = "RX_BIAS", "MCLK";
+
+	mm1-dai-link {
+		link-name = "MultiMedia1";
+		cpu {
+			sound-dai = <&q6asmdai MSM_FRONTEND_DAI_MULTIMEDIA1>;
+		};
+	};
+
+	mm2-dai-link {
+		link-name = "MultiMedia2";
+		cpu {
+			sound-dai = <&q6asmdai MSM_FRONTEND_DAI_MULTIMEDIA2>;
+		};
+	};
+
+	mm3-dai-link {
+		link-name = "MultiMedia3";
+		cpu {
+			sound-dai = <&q6asmdai MSM_FRONTEND_DAI_MULTIMEDIA3>;
+		};
+	};
+
+	slim-dai-link {
+		link-name = "SLIM Playback";
+		cpu {
+			sound-dai = <&q6afedai SLIMBUS_0_RX>;
+		};
+
+		platform {
+			sound-dai = <&q6routing>;
+		};
+
+		codec {
+			sound-dai = <&wcd9335 AIF1_PB>;
+		};
+	};
+
+	slimcap-dai-link {
+		link-name = "SLIM Capture";
+		cpu {
+			sound-dai = <&q6afedai SLIMBUS_0_TX>;
+		};
+
+		platform {
+			sound-dai = <&q6routing>;
+		};
+
+		codec {
+			sound-dai = <&wcd9335 AIF1_CAP>;
+		};
+	};
+};
+
+/* USB: Type-C, high-speed only (vendor never wires the QMP SS path;
+ * oneplus3 is HS-only upstream too). VBUS is switched by the Cypress CCG2
+ * CC chip in hardware, so no vbus-supply/extcon. Peripheral mode keeps
+ * ADB available without role switching. */
+&usb3 {
+	qcom,select-utmi-as-pipe-clk;
+	status = "okay";
+};
+
+&usb3_dwc3 {
+	dr_mode = "peripheral";
+	maximum-speed = "high-speed";
+	phys = <&hsusb_phy1>;
+	phy-names = "usb2-phy";
+};
+
+&hsusb_phy1 {
+	status = "okay";
+
+	vdd-supply = <&vreg_l28a_0p925>;
+	vdda-pll-supply = <&vreg_l12a_1p8>;
+	vdda-phy-dpdm-supply = <&vreg_l24a_3p075>;
+};
+
+&tlmm {
+	touch_active: touch-active-state {
+		pins = "gpio89", "gpio125";
+		function = "gpio";
+		drive-strength = <16>;
+		bias-pull-up;
+	};
+
+	touch_suspend: touch-suspend-state {
+		pins = "gpio89", "gpio125";
+		function = "gpio";
+		drive-strength = <2>;
+		bias-disable;
+	};
+};
+
+&pm8994_gpios {
+	bt_en_gpios: bt-en-gpios-state {
+		pins = "gpio19";
+		function = PMIC_GPIO_FUNC_NORMAL;
+		output-low;
+		power-source = <PM8994_GPIO_S4>;
+		qcom,drive-strength = <PMIC_GPIO_STRENGTH_LOW>;
+		bias-pull-down;
+	};
+
+	wlan_en_gpios: wlan-en-gpios-state {
+		pins = "gpio8";
+		function = PMIC_GPIO_FUNC_NORMAL;
+		output-low;
+		power-source = <PM8994_GPIO_S4>;
+		qcom,drive-strength = <PMIC_GPIO_STRENGTH_LOW>;
+		bias-pull-down;
+	};
+
+	/* Rome sleep clock output, GPIO18 func2 */
+	divclk4_pin_a: divclk4-state {
+		pins = "gpio18";
+		function = PMIC_GPIO_FUNC_FUNC2;
+		bias-disable;
+		power-source = <PM8994_GPIO_S4>;
+	};
+
+	/* audio MCLK output, GPIO15 func1 */
+	audio_mclk: audio-mclk-state {
+		pins = "gpio15";
+		function = PMIC_GPIO_FUNC_FUNC1;
+		power-source = <PM8994_GPIO_S4>;
+	};
+
+	/*
+	 * Rome 3.3V control, GPIO9 (vendor sets it high; ath10k has no DT
+	 * regulator hook for this rail, so force it via pinctrl - the
+	 * bootloader already leaves it high).
+	 */
+	rome_3v3_gpios: rome-3v3-gpios-state {
+		pins = "gpio9";
+		function = PMIC_GPIO_FUNC_NORMAL;
+		output-high;
+		power-source = <PM8994_GPIO_VPH>;
+	};
 };
