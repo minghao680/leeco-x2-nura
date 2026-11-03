@@ -482,10 +482,10 @@ index 1fc7045..c1d2c31 100644
  	/* Using 1-1 mapping on this platform. */
  	return phys_addr;
 diff --git a/platform/msm_shared/dev_tree.c b/platform/msm_shared/dev_tree.c
-index 86757c0..e238f0e 100644
+index 86757c0..018b4f5 100644
 --- a/platform/msm_shared/dev_tree.c
 +++ b/platform/msm_shared/dev_tree.c
-@@ -1297,6 +1297,46 @@ void *dev_tree_appended(void *kernel, uint32_t kernel_size, uint32_t dtb_offset,
+@@ -1297,6 +1297,48 @@ void *dev_tree_appended(void *kernel, uint32_t kernel_size, uint32_t dtb_offset,
  	else
  		memcpy((void*) &app_dtb_offset, (void*) (kernel + DTB_OFFSET), sizeof(uint32_t));
  
@@ -507,7 +507,9 @@ index 86757c0..e238f0e 100644
 +		const unsigned char *b = (const unsigned char *)kernel;
 +		int32_t i;
 +
-+		for (i = (int32_t)kernel_size - 4; i >= 0; i -= 4) {
++		/* byte-wise: the DTB is appended unaligned (14992613 on x2,
++		 * not a multiple of 4), so a 4-byte stride misses it entirely */
++		for (i = (int32_t)kernel_size - 4; i >= 0; i--) {
 +			struct fdt_header h;
 +			uint32_t total;
 +
@@ -532,7 +534,7 @@ index 86757c0..e238f0e 100644
  	/* Check for dtbo support */
  #if !DTBO_DISABLED
  	ret = dev_tree_appended_with_dtbo(kernel, kernel_size, app_dtb_offset, tags);
-@@ -1321,6 +1361,14 @@ void *dev_tree_appended(void *kernel, uint32_t kernel_size, uint32_t dtb_offset,
+@@ -1321,6 +1363,14 @@ void *dev_tree_appended(void *kernel, uint32_t kernel_size, uint32_t dtb_offset,
  		return NULL;
  	}
  	dtb = (void *)((uintptr_t)kernel + app_dtb_offset);
