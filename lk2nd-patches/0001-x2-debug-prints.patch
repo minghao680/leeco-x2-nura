@@ -1,8 +1,8 @@
 diff --git a/app/aboot/aboot.c b/app/aboot/aboot.c
-index b44a5c2..9568a96 100644
+index b44a5c2..9087d4c 100644
 --- a/app/aboot/aboot.c
 +++ b/app/aboot/aboot.c
-@@ -1296,16 +1296,22 @@ tags_done:
+@@ -1296,16 +1296,30 @@ tags_done:
  	dprintf(INFO, "booting linux @ %p, ramdisk @ %p (%d), tags/device tree @ %p\n",
  		entry, ramdisk, ramdisk_size, (void *)tags_phys);
  
@@ -17,15 +17,23 @@ index b44a5c2..9568a96 100644
  	arch_disable_cache(UCACHE);
  
 +	dprintf(INFO, "x2dbg: cache disabled\n");
++	{
++		extern void x2_lklog_marker(const char *);
++		x2_lklog_marker_raw("MK1:cache-off");
++	}
 +
  #if ARM_WITH_MMU
  	arch_disable_mmu();
  #endif
 +	dprintf(INFO, "x2dbg: mmu disabled, calling monitor next\n");
++	{
++		extern void x2_lklog_marker(const char *);
++		x2_lklog_marker_raw("MK2:mmu-off");
++	}
  	bs_set_timestamp(BS_KERNEL_ENTRY);
  
  	if (IS_ARM64(kptr))
-@@ -3460,6 +3466,15 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
+@@ -3460,6 +3474,15 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
  	memmove((void*) hdr->ramdisk_addr, ptr + page_size + kernel_actual, hdr->ramdisk_size);
  	memmove((void*) hdr->kernel_addr, (char*) (kernel_start_addr), kernel_size);
  
@@ -41,15 +49,19 @@ index b44a5c2..9568a96 100644
  	fastboot_okay("");
  	fastboot_stop();
  
-@@ -3469,6 +3484,7 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
+@@ -3469,6 +3492,11 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
  	thread_sleep(LK2ND_FASTBOOT_DELAY);
  	#endif
  
 +	dprintf(INFO, "x2dbg: entering boot_linux\n");
++	{
++		extern void x2_lklog_marker(const char *);
++		x2_lklog_marker("MK0:pre-boot-linux");
++	}
  	boot_linux((void*) hdr->kernel_addr, (void*) hdr->tags_addr,
  		   (const char*) hdr->cmdline, board_machtype(),
  		   (void*) hdr->ramdisk_addr, hdr->ramdisk_size,
-@@ -3491,8 +3507,7 @@ void cmd_erase_nand(const char *arg, void *data, unsigned sz)
+@@ -3491,8 +3519,7 @@ void cmd_erase_nand(const char *arg, void *data, unsigned sz)
  
  	ptable = flash_get_ptable();
  	if (ptable == NULL) {
@@ -60,7 +72,7 @@ index b44a5c2..9568a96 100644
  
  	ptn = ptable_find(ptable, arg);
 diff --git a/lib/debug/debug.c b/lib/debug/debug.c
-index 64ef6f6..5112352 100644
+index 64ef6f6..5ee97d7 100644
 --- a/lib/debug/debug.c
 +++ b/lib/debug/debug.c
 @@ -29,6 +29,8 @@
@@ -72,7 +84,7 @@ index 64ef6f6..5112352 100644
  #include <arch/ops.h>
  #include <platform.h>
  #include <platform/debug.h>
-@@ -83,8 +85,70 @@ void _panic(void *caller, const char *fmt, ...)
+@@ -83,8 +85,121 @@ void _panic(void *caller, const char *fmt, ...)
  	halt();
  }
  
@@ -97,8 +109,12 @@ index 64ef6f6..5112352 100644
 +	uint32_t off;
 +
 +	if (!mapped) {
++		/* Retry on every call: early dputs() runs before the MMU tables
++		 * exist and lk2nd_mmu_map_ram_dynamic() fails then. Latching a
++		 * failure would leave the whole log empty. */
 +		if (!lk2nd_mmu_map_ram_dynamic("x2 lklog", X2_LKLOG_BASE, 0x100000))
 +			return;
++
 +		hdr = (volatile uint32_t *)X2_LKLOG_BASE;
 +		if (hdr[0] != X2_LKLOG_MAGIC) {
 +			hdr[0] = X2_LKLOG_MAGIC;
@@ -114,6 +130,53 @@ index 64ef6f6..5112352 100644
 +		return;
 +	buf[off++] = c;
 +	hdr[1] = off;
++}
++
++/*
++ * Raw marker: used AFTER arch_disable_mmu(), when lk2nd_mmu_map_ram_dynamic()
++ * is no longer callable. Identity mapping + caches off means a plain
++ * physical write is safe.
++ */
++void x2_lklog_marker_raw(const char *tag)
++{
++	volatile uint32_t *hdr = (volatile uint32_t *)X2_LKLOG_BASE;
++	volatile char *buf = (volatile char *)(X2_LKLOG_BASE + 16);
++	uint32_t off = hdr[1];
++	const char *p;
++
++	if (hdr[0] != X2_LKLOG_MAGIC) {
++		hdr[0] = X2_LKLOG_MAGIC;
++		off = 0;
++	}
++	for (p = tag; *p && off < X2_LKLOG_MAX - 1; p++)
++		buf[off++] = *p;
++	buf[off++] = '|';
++	hdr[1] = off;
++}
++
++void x2_lklog_marker(const char *tag)
++{
++	volatile uint32_t *hdr;
++	uint32_t off, n = 0;
++	const char *p;
++
++	if (!lk2nd_mmu_map_ram_dynamic("x2 lklog", X2_LKLOG_BASE, 0x100000))
++		return;
++	hdr = (volatile uint32_t *)X2_LKLOG_BASE;
++	if (hdr[0] != X2_LKLOG_MAGIC) {
++		hdr[0] = X2_LKLOG_MAGIC;
++		hdr[1] = 0;
++	}
++	off = hdr[1];
++	/* markers survive independently of the text buffer limit */
++	for (p = tag; *p && n < 32; p++, n++) {
++		if (off + 1 >= X2_LKLOG_MAX)
++			break;
++		((volatile char *)(X2_LKLOG_BASE + 16))[off++] = *p;
++	}
++	((volatile char *)(X2_LKLOG_BASE + 16))[off++] = '|';
++	hdr[1] = off;
++	arch_clean_invalidate_cache_range(X2_LKLOG_BASE, 16 + off);
 +}
 +
 +static void x2_lklog_write(const char *str, size_t len)
@@ -143,7 +206,7 @@ index 64ef6f6..5112352 100644
  	while(*str != 0) {
  		_dputc(*str++);
  	}
-@@ -94,6 +158,7 @@ int _dputs(const char *str)
+@@ -94,6 +209,7 @@ int _dputs(const char *str)
  
  static int _dprintf_output_func(char c, void *state)
  {
@@ -152,19 +215,23 @@ index 64ef6f6..5112352 100644
  
  	return INT_MAX;
 diff --git a/platform/msm_shared/scm.c b/platform/msm_shared/scm.c
-index 8c76083..4b9e77d 100644
+index 8c76083..66d9426 100644
 --- a/platform/msm_shared/scm.c
 +++ b/platform/msm_shared/scm.c
-@@ -1060,6 +1060,8 @@ void scm_elexec_call(paddr_t kernel_entry, paddr_t dtb_offset)
+@@ -1060,6 +1060,12 @@ void scm_elexec_call(paddr_t kernel_entry, paddr_t dtb_offset)
  	param.el1_elr = kernel_entry;
  
  	/* Response Buffer = Null as no response expected */
++	{
++		extern void x2_lklog_marker_raw(const char *);
++		x2_lklog_marker_raw("MK3:scm-elexec");
++	}
 +	dprintf(INFO, "x2dbg: elexec param el1_x0=%p el1_elr=%p\n",
 +		(void*)param.el1_x0, (void*)param.el1_elr);
  	dprintf(INFO, "Jumping to kernel via monitor\n");
  
  	if (!is_scm_armv8_support())
-@@ -1081,6 +1083,7 @@ void scm_elexec_call(paddr_t kernel_entry, paddr_t dtb_offset)
+@@ -1081,6 +1087,7 @@ void scm_elexec_call(paddr_t kernel_entry, paddr_t dtb_offset)
  	}
  
  	/* Assert if execution ever reaches here */
