@@ -286,3 +286,40 @@ adb -s 33470699 shell "su -c 'cat /sys/fs/pstore/console-ramoops'"
 > **构建链路全通、板子能被 lk2nd 正确识别、DTS/面板驱动都编译通过；
 > 唯一卡点是内核从 lk2nd 引导后启动失败且抓不到日志。
 > 最高优先级的实验是「做一个不含 dtb 的 boot.img」——因为 lk2nd 自己会 append DTB，可能冲突。**
+
+---
+
+## 2026-11-03 凌晨进展（当晚续接必读）
+
+### 三大新事实
+1. **CONFIG_PSTORE_RAM=m（fork defconfig）**：ramoops 是模块，无 rootfs 永不加载 →
+   此前"console-ramoops 无内容=内核早死"的推断全部失效。CI 已 force-enable
+   `PSTORE/PSTORE_RAM/PSTORE_CONSOLE/PSTORE_PMSG=y`（9dc3cdc），新内核已构建成功
+   （run 41497328554，Image.gz 14.99MB，本地 `G:\LeEco-Max2\kernel-artifact\`）。
+2. **lk2nd 的 DTB 匹配在 x2 上全拒**：设备实际报告 subtype=0 / pmic=0x20009-0x10113 /
+   target=0x10008（lk2nd 日志 `Device info ...` 行），所有 DTB（含 33 个 stock）都
+   不匹配；单 DTB 靠 dev_tree.c:1357 兜底强制选中。
+3. **三条日志通道已打通**：`fastboot oem log`（lk2nd 自身日志，get_staged 取回）；
+   `lk2nd.pass-ramoops=zap` cmdline + `fastboot oem ramoops console`（崩溃后无需
+   Android 直接读内核控制台）；黑匣子 payload（lk2nd 同款路径引导裸机探针，把
+   x0/DTB/cmdline 转储进 ramoops）。
+
+### 设备状态（本次会话结束时）
+- **电量耗尽自动关机**——黑匣子 v2 记录（payload 写入 0x915A0000 的 DTB 转储）随
+  RAM 掉电丢失。无损失：payload v3 已带 KPSS 看门狗自恢复（5s 必复位），重跑即可。
+- 未写入任何分区；备份完好。
+
+### 今晚执行清单（按序）
+1. 充电开机，确认 `adb devices` 有 33470699（另一台 38d4fdf 是小米平板，别碰）
+2. **重跑黑匣子 v3**：`fastboot boot out/payload-artifact/*/boot-payload.img`（先
+   `gh run download 41494852631` 取工件）→ 自动复位 → 读 console-ramoops →
+   `python scripts/parse-probe.py <文件>` → 得到 lk2nd 实际传给内核的内存映射/cmdline
+3. **首个内核日志**：`out/boot-v2.img` 已组装好（新内核+新 DTB+pmOS cmdline）→
+   `bash scripts/boot-test.sh out/boot-v2.img` → `oem ramoops console` 抓 6.19 日志
+4. 按日志定位崩溃点（重点怀疑 MDP SMMU——Mi Note 2 同类秒崩先例）
+5. 修复后：推送外围 DTS（已在本地 DTS 集成未提交，证据见
+   docs/peripherals-dts-notes.md）+ 面板序列已提交（651c83d）
+
+### 本地未提交变更
+- `kernel/patches/0001-arm64-dts-qcom-add-LeEco-Le-Max-2.dts`：外围设备全套
+  （触摸/蓝牙/WiFi/振动/功放/WCD9335/USB/3 条电压轨）——首次引导验证后提交
