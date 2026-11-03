@@ -102,7 +102,7 @@ index b44a5c2..f2b190d 100644
  
  	ptn = ptable_find(ptable, arg);
 diff --git a/lib/debug/debug.c b/lib/debug/debug.c
-index 64ef6f6..21428a7 100644
+index 64ef6f6..ce27cc7 100644
 --- a/lib/debug/debug.c
 +++ b/lib/debug/debug.c
 @@ -29,6 +29,8 @@
@@ -114,7 +114,7 @@ index 64ef6f6..21428a7 100644
  #include <arch/ops.h>
  #include <platform.h>
  #include <platform/debug.h>
-@@ -83,8 +85,121 @@ void _panic(void *caller, const char *fmt, ...)
+@@ -83,8 +85,132 @@ void _panic(void *caller, const char *fmt, ...)
  	halt();
  }
  
@@ -228,6 +228,17 @@ index 64ef6f6..21428a7 100644
 +	fastboot_stage((void *)(X2_LKLOG_BASE + 16), off);
 +}
 +FASTBOOT_REGISTER("oem lklog", cmd_oem_lklog);
++static void cmd_oem_lklog_reset(const char *arg, void *data, unsigned sz)
++{
++	volatile uint32_t *hdr = (volatile uint32_t *)X2_LKLOG_BASE;
++
++	hdr[0] = X2_LKLOG_MAGIC;
++	hdr[1] = 0;
++	arch_clean_invalidate_cache_range(X2_LKLOG_BASE, 16);
++	fastboot_okay("lklog cleared");
++}
++FASTBOOT_REGISTER("oem lklog-reset", cmd_oem_lklog_reset);
++
 +
  int _dputs(const char *str)
  {
@@ -236,7 +247,7 @@ index 64ef6f6..21428a7 100644
  	while(*str != 0) {
  		_dputc(*str++);
  	}
-@@ -94,6 +209,7 @@ int _dputs(const char *str)
+@@ -94,6 +220,7 @@ int _dputs(const char *str)
  
  static int _dprintf_output_func(char c, void *state)
  {
@@ -244,7 +255,7 @@ index 64ef6f6..21428a7 100644
  	_dputc(c);
  
  	return INT_MAX;
-@@ -383,3 +499,18 @@ static int cmd_memtest(int argc, const cmd_args *argv)
+@@ -383,3 +510,18 @@ static int cmd_memtest(int argc, const cmd_args *argv)
  
  #endif
   
@@ -264,7 +275,7 @@ index 64ef6f6..21428a7 100644
 +	dprintf(INFO, "x2dbg: %s\n", x2_ddr_str);
 +}
 diff --git a/platform/msm8996/platform.c b/platform/msm8996/platform.c
-index 1fc7045..688ed12 100644
+index 1fc7045..c1d2c31 100644
 --- a/platform/msm8996/platform.c
 +++ b/platform/msm8996/platform.c
 @@ -68,11 +68,14 @@ static mmu_section_t default_mmu_section_table[] =
@@ -279,9 +290,9 @@ index 1fc7045..688ed12 100644
 +	{    MEMBASE,           MEMBASE,          MMU_L2_NS_SECTION_MAPPING,  (MEMSIZE / MB),      LK_MEMORY},
 +	{    MIPI_FB_ADDR,      MIPI_FB_ADDR,     MMU_L2_NS_SECTION_MAPPING,  40,                  LK_MEMORY},
 +	{    SCRATCH_ADDR,      SCRATCH_ADDR,     MMU_L2_NS_SECTION_MAPPING,  SCRATCH_SIZE,        SCRATCH_MEMORY},
-+	/* x2 debug lklog area (pstore console prz) - must be mapped before the
-+	 * first dputs() so early markers survive a crashed boot session */
-+	{    0x915A0000,        0x915A0000,       MMU_L2_NS_SECTION_MAPPING,  1,                   LK_MEMORY},
++	/* x2 debug lklog area (pstore console prz). L2 section mappings are
++	 * 2MB-granular, so map the 2MB window that contains 0x915A0000. */
++	{    0x91400000,        0x91400000,       MMU_L2_NS_SECTION_MAPPING,  2,                   LK_MEMORY},
 +	{    MSM_SHARED_BASE,   MSM_SHARED_BASE,  MMU_L2_NS_SECTION_MAPPING,  MSM_SHARED_SIZE,     COMMON_MEMORY},
 +	{    RPMB_SND_RCV_BUF,  RPMB_SND_RCV_BUF, MMU_L2_NS_SECTION_MAPPING,  RPMB_SND_RCV_BUF_SZ, IOMAP_MEMORY},
  };
