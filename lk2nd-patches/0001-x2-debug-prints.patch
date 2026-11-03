@@ -1,5 +1,5 @@
 diff --git a/app/aboot/aboot.c b/app/aboot/aboot.c
-index b44a5c2..695bb60 100644
+index b44a5c2..46dd6bc 100644
 --- a/app/aboot/aboot.c
 +++ b/app/aboot/aboot.c
 @@ -158,6 +158,8 @@ struct fastboot_cmd_desc {
@@ -142,7 +142,7 @@ index b44a5c2..695bb60 100644
 +
 +	if (!fb)
 +		return;
-+	y = (int)fb->height - (8 - row) * 12 * 2;
++	y = (int)fb->height - (10 - row) * 12 * 2;
 +	if (y < 0)
 +		return;
 +	while (*str) {
@@ -572,10 +572,23 @@ index 86757c0..87f5631 100644
  		*((uint32_t *)(kernel + app_dtb_offset)) = 0;
  		return tags;
 diff --git a/platform/msm_shared/scm.c b/platform/msm_shared/scm.c
-index 8c76083..e0fa2bf 100644
+index 8c76083..d3dbdcf 100644
 --- a/platform/msm_shared/scm.c
 +++ b/platform/msm_shared/scm.c
-@@ -1059,7 +1059,18 @@ void scm_elexec_call(paddr_t kernel_entry, paddr_t dtb_offset)
+@@ -120,6 +120,12 @@ void scm_init(void)
+ 
+ 	ret = scm_arm_support_available(SCM_SVC_INFO, IS_CALL_AVAIL_CMD);
+ 
++	{
++		extern void x2_screen_hex(int, const char *, unsigned);
++		extern void x2_screen_line(int, const char *);
++		x2_screen_line(6, "SCM probe:");
++		x2_screen_hex(7, "ret", (unsigned)ret);
++	}
+ 	if (ret < 0)
+ 		dprintf(CRITICAL, "Failed to initialize SCM\n");
+ 
+@@ -1059,7 +1065,18 @@ void scm_elexec_call(paddr_t kernel_entry, paddr_t dtb_offset)
  	param.el1_x0 = dtb_offset;
  	param.el1_elr = kernel_entry;
  
@@ -594,7 +607,7 @@ index 8c76083..e0fa2bf 100644
  	dprintf(INFO, "Jumping to kernel via monitor\n");
  
  	if (!is_scm_armv8_support())
-@@ -1081,6 +1092,7 @@ void scm_elexec_call(paddr_t kernel_entry, paddr_t dtb_offset)
+@@ -1081,6 +1098,7 @@ void scm_elexec_call(paddr_t kernel_entry, paddr_t dtb_offset)
  	}
  
  	/* Assert if execution ever reaches here */
