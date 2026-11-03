@@ -43,6 +43,18 @@ jobs:
             }' "$MF" > "$MF.new" && mv "$MF.new" "$MF"
           cd kernel-src
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- defconfig >/dev/null
+          # The initramfs is reachable only through the USB ACM console (no
+          # UART on this board), so all of this must be built in - the
+          # defconfig ships CONFIG_USB_CONFIGFS=m.
+          scripts/config --file .config \
+            -e USB -e USB_DWC3 -e USB_DWC3_DUAL_ROLE -e USB_GADGET \
+            -e USB_CONFIGFS -e USB_CONFIGFS_SERIAL -e USB_CONFIGFS_ACM \
+            -e TYPEC -e PHY_QCOM_QMP_USB -e PHY_QCOM_QUSB2 \
+            -e PSTORE -e PSTORE_RAM -e PSTORE_CONSOLE -e PSTORE_PMSG \
+            -e DEVTMPFS -e DEVTMPFS_MOUNT -e BLK_DEV_INITRD
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig >/dev/null
+          echo "=== USB/initrd options ==="
+          grep -E "CONFIG_(USB_DWC3|USB_CONFIGFS|USB_CONFIGFS_ACM|BLK_DEV_INITRD|DEVTMPFS)=" .config || true
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- qcom/msm8996-leeco-x2.dtb
           cp arch/arm64/boot/dts/qcom/msm8996-leeco-x2.dtb ../
 
