@@ -60,7 +60,7 @@ index b44a5c2..9568a96 100644
  
  	ptn = ptable_find(ptable, arg);
 diff --git a/lib/debug/debug.c b/lib/debug/debug.c
-index 64ef6f6..6e255ad 100644
+index 64ef6f6..20ce4d4 100644
 --- a/lib/debug/debug.c
 +++ b/lib/debug/debug.c
 @@ -29,6 +29,8 @@
@@ -72,7 +72,7 @@ index 64ef6f6..6e255ad 100644
  #include <arch/ops.h>
  #include <platform.h>
  #include <platform/debug.h>
-@@ -83,8 +85,74 @@ void _panic(void *caller, const char *fmt, ...)
+@@ -83,8 +85,73 @@ void _panic(void *caller, const char *fmt, ...)
  	halt();
  }
  
@@ -102,8 +102,7 @@ index 64ef6f6..6e255ad 100644
 +	 * an unmapped write faults and would kill lk2nd itself.
 +	 */
 +	if (!mapped) {
-+		if (!lk2nd_mmu_map_ram_dynamic("x2 lklog", X2_LKLOG_BASE,
-+					  ALIGN(X2_LKLOG_MAX + 16, 0x100000)))
++		if (!lk2nd_mmu_map_ram_dynamic("x2 lklog", X2_LKLOG_BASE, 0x100000))
 +			return;
 +		hdr = (volatile uint32_t *)X2_LKLOG_BASE;
 +		if (hdr[0] != X2_LKLOG_MAGIC) {
