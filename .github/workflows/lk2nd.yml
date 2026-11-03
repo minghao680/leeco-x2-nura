@@ -11,6 +11,7 @@ on:
   push:
     paths:
       - "lk2nd/**"
+      - "lk2nd-patches/**"
       - ".github/workflows/lk2nd.yml"
 
 jobs:
