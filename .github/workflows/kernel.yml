@@ -126,10 +126,18 @@ jobs:
           scripts/config --file .config \
             -e PSTORE -e PSTORE_RAM -e PSTORE_CONSOLE -e PSTORE_PMSG \
             -e PSTORE_DEFLATE_COMPRESS -e PSTORE_DEFLATE_COMPRESS_DEFAULT
+          # USB gadget MUST be built-in too: the defconfig ships
+          # CONFIG_USB_CONFIGFS=m, which can never load without a rootfs.
+          # That is why the initramfs USB-ACM console - the only shell path
+          # on this board, since there is no UART - never showed up.
+          scripts/config --file .config \
+            -e USB -e USB_DWC3 -e USB_DWC3_DUAL_ROLE -e USB_GADGET \
+            -e USB_CONFIGFS -e USB_CONFIGFS_SERIAL -e USB_CONFIGFS_ACM \
+            -e TYPEC -e PHY_QCOM_QMP_USB -e PHY_QCOM_QUSB2
           make ARCH=arm64 LLVM=1 olddefconfig
 
           echo "=== key options ==="
-          grep -E "CONFIG_(ARCH_QCOM|DRM_MSM|SCSI_UFS_QCOM|PHY_QCOM_QMP_UFS|TOUCHSCREEN_ATMEL_MXT|PINCTRL_MSM8996|PSTORE_RAM|PSTORE_CONSOLE)=" .config || true
+          grep -E "CONFIG_(ARCH_QCOM|DRM_MSM|SCSI_UFS_QCOM|PHY_QCOM_QMP_UFS|TOUCHSCREEN_ATMEL_MXT|PINCTRL_MSM8996|PSTORE_RAM|PSTORE_CONSOLE|USB_DWC3|USB_CONFIGFS|USB_CONFIGFS_ACM)=" .config || true
 
       - name: Build kernel + dtbs
         run: |
