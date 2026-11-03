@@ -321,6 +321,30 @@ index 64ef6f6..ce27cc7 100644
 +		 (unsigned long long)size, (unsigned long long)start);
 +	dprintf(INFO, "x2dbg: %s\n", x2_ddr_str);
 +}
+diff --git a/lib/zlib_inflate/decompress.c b/lib/zlib_inflate/decompress.c
+index c51fb4d..37ab65a 100644
+--- a/lib/zlib_inflate/decompress.c
++++ b/lib/zlib_inflate/decompress.c
+@@ -127,8 +127,17 @@ int decompress(unsigned char *in_buf, unsigned int in_len,
+ 
+ 	inflateEnd(stream);
+ 	if (pos)
+-		/* alculation the length of the compressed package */
+-		*pos = stream->next_in - in_buf + 8;
++		/*
++		 * Length of the gzip package = next_in - in_buf. inflate() stops
++		 * after consuming the whole gzip stream including the 8-byte
++		 * trailer, and next_in was initialised past the 10-byte header,
++		 * so the difference is already the exact package length.
++		 * The old "+8" made it 2 bytes short on x2: dtb_offset landed
++		 * inside the gzip trailer (14992603 vs real end 14992605, DTB at
++		 * 14992613), so dev_tree_appended() copied garbage into
++		 * tags_addr and update_device_tree() panicked.
++		 */
++		*pos = (stream->next_in - in_buf);
+ 
+ 	if (out_len)
+ 		*out_len = stream->total_out;
 diff --git a/platform/msm8996/platform.c b/platform/msm8996/platform.c
 index 1fc7045..c1d2c31 100644
 --- a/platform/msm8996/platform.c
