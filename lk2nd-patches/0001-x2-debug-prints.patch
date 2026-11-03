@@ -569,7 +569,7 @@ index 86757c0..87f5631 100644
  		*((uint32_t *)(kernel + app_dtb_offset)) = 0;
  		return tags;
 diff --git a/platform/msm_shared/scm.c b/platform/msm_shared/scm.c
-index 8c76083..2ba89d1 100644
+index 8c76083..4c338f0 100644
 --- a/platform/msm_shared/scm.c
 +++ b/platform/msm_shared/scm.c
 @@ -120,6 +120,12 @@ void scm_init(void)
@@ -585,7 +585,7 @@ index 8c76083..2ba89d1 100644
  	if (ret < 0)
  		dprintf(CRITICAL, "Failed to initialize SCM\n");
  
-@@ -1049,42 +1055,71 @@ int scm_halt_pmic_arbiter(void)
+@@ -1049,42 +1055,70 @@ int scm_halt_pmic_arbiter(void)
  
  void scm_elexec_call(paddr_t kernel_entry, paddr_t dtb_offset)
  {
@@ -673,8 +673,7 @@ index 8c76083..2ba89d1 100644
 +		extern void x2_screen_line(int, const char *);
 +		x2_screen_line(6, "elexec RETURNED - boot failed");
 +	}
-+	dprintf(CRITICAL, "x2dbg: RETURNED FROM MONITOR
-+");
++	dprintf(CRITICAL, "x2dbg: RETURNED FROM MONITOR\n");
  	ASSERT(0);
  }
  
