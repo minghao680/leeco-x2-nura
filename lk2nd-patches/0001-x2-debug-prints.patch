@@ -1,8 +1,17 @@
 diff --git a/app/aboot/aboot.c b/app/aboot/aboot.c
-index b44a5c2..f21cc82 100644
+index b44a5c2..8d84d4e 100644
 --- a/app/aboot/aboot.c
 +++ b/app/aboot/aboot.c
-@@ -1215,6 +1215,12 @@ void boot_linux(void *kernel, unsigned *tags,
+@@ -158,6 +158,8 @@ struct fastboot_cmd_desc {
+ 
+ #define IS_ARM64(ptr) (ptr->magic_64 == KERNEL64_HDR_MAGIC) ? true : false
+ 
++static void x2_screen_line(int row, const char *str);
++
+ #define ADD_OF(a, b) (UINT_MAX - b > a) ? (a + b) : UINT_MAX
+ 
+ //Size of the header that is used in case the boot image has
+@@ -1215,6 +1217,12 @@ void boot_linux(void *kernel, unsigned *tags,
  
  	ramdisk = (void *)PA((addr_t)ramdisk);
  
@@ -15,11 +24,13 @@ index b44a5c2..f21cc82 100644
  	if (IS_ARM64(kptr))
  		boot_type |= BOOT_ARM64;
  	if (strstr(cmdline, "androidboot"))
-@@ -1296,24 +1302,40 @@ tags_done:
+@@ -1296,24 +1304,44 @@ tags_done:
  	dprintf(INFO, "booting linux @ %p, ramdisk @ %p (%d), tags/device tree @ %p\n",
  		entry, ramdisk, ramdisk_size, (void *)tags_phys);
  
 +	dprintf(INFO, "x2dbg: boot_linux pre-uninit: entry=%p tags=%p\n", entry, (void*)tags_phys);
++	x2_screen_line(0, "x2: boot_linux entered");
++	x2_screen_line(1, IS_ARM64(kptr) ? "arm64 kernel" : "32bit kernel");
  	enter_critical_section();
  
  	/* do any platform specific cleanup before kernel entry */
@@ -27,6 +38,7 @@ index b44a5c2..f21cc82 100644
  
 -	arch_disable_cache(UCACHE);
 +	dprintf(INFO, "x2dbg: platform_uninit done\n");
++	x2_screen_line(2, "platform uninit done");
  
 -#if ARM_WITH_MMU
 -	arch_disable_mmu();
@@ -44,6 +56,7 @@ index b44a5c2..f21cc82 100644
 +	 * the EL1/EL2 state and drops the MMU itself during the 32->64 switch.
 +	 */
 +	dprintf(INFO, "x2dbg: entering monitor with MMU on\n");
++	x2_screen_line(3, "calling TZ monitor...");
  	bs_set_timestamp(BS_KERNEL_ENTRY);
  
  	if (IS_ARM64(kptr))
@@ -62,7 +75,7 @@ index b44a5c2..f21cc82 100644
  }
  
  /* Function to check if the memory address range falls within the aboot
-@@ -3074,6 +3096,17 @@ int copy_dtb(uint8_t *boot_image_start, unsigned int scratch_offset)
+@@ -3074,6 +3102,17 @@ int copy_dtb(uint8_t *boot_image_start, unsigned int scratch_offset)
  	dt_size = hdr->dt_size;
  #endif
  
@@ -80,7 +93,38 @@ index b44a5c2..f21cc82 100644
  	if(dt_size != 0) {
  		/* add kernel offset */
  		dt_image_offset += page_size;
-@@ -3441,6 +3474,31 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
+@@ -3149,6 +3188,30 @@ int copy_dtb(uint8_t *boot_image_start, unsigned int scratch_offset)
+ }
+ #endif
+ 
++/*
++ * x2 on-screen diagnostics.
++ *
++ * With no UART available, the panel is the only output device we have before
++ * the kernel takes over. Draw short status lines at the bottom of the frame
++ * so the last visible line identifies how far the hand-off got.
++ */
++static void x2_screen_line(int row, const char *str)
++{
++	struct fbcon_config *fb = fbcon_display();
++	int x = 8, y;
++
++	if (!fb)
++		return;
++	y = (int)fb->height - (4 - row) * 12 * 2;
++	if (y < 0)
++		return;
++	while (*str) {
++		fbcon_putc_factor_xy(*str++, 255, 2, x, y);
++		x += 5 * 2;
++	}
++	fbcon_flush();
++}
++
+ void cmd_boot(const char *arg, void *data, unsigned sz)
+ {
+ 	unsigned kernel_actual;
+@@ -3441,6 +3504,31 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
  	 */
  	if (!dtb_copied) {
  		void *dtb;
@@ -112,7 +156,7 @@ index b44a5c2..f21cc82 100644
  		dtb = dev_tree_appended((void*)(ptr + page_size),
  					hdr->kernel_size, dtb_offset,
  					(void *)hdr->tags_addr);
-@@ -3460,6 +3518,15 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
+@@ -3460,6 +3548,15 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
  	memmove((void*) hdr->ramdisk_addr, ptr + page_size + kernel_actual, hdr->ramdisk_size);
  	memmove((void*) hdr->kernel_addr, (char*) (kernel_start_addr), kernel_size);
  
@@ -128,7 +172,7 @@ index b44a5c2..f21cc82 100644
  	fastboot_okay("");
  	fastboot_stop();
  
-@@ -3469,6 +3536,7 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
+@@ -3469,6 +3566,7 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
  	thread_sleep(LK2ND_FASTBOOT_DELAY);
  	#endif
  
@@ -136,7 +180,7 @@ index b44a5c2..f21cc82 100644
  	boot_linux((void*) hdr->kernel_addr, (void*) hdr->tags_addr,
  		   (const char*) hdr->cmdline, board_machtype(),
  		   (void*) hdr->ramdisk_addr, hdr->ramdisk_size,
-@@ -3491,8 +3559,7 @@ void cmd_erase_nand(const char *arg, void *data, unsigned sz)
+@@ -3491,8 +3589,7 @@ void cmd_erase_nand(const char *arg, void *data, unsigned sz)
  
  	ptable = flash_get_ptable();
  	if (ptable == NULL) {
