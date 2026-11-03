@@ -251,10 +251,30 @@ index 64ef6f6..21428a7 100644
 +	dprintf(INFO, "x2dbg: %s\n", x2_ddr_str);
 +}
 diff --git a/platform/msm8996/platform.c b/platform/msm8996/platform.c
-index 1fc7045..f7005e2 100644
+index 1fc7045..688ed12 100644
 --- a/platform/msm8996/platform.c
 +++ b/platform/msm8996/platform.c
-@@ -134,19 +134,64 @@ void platform_init_mmu_mappings(void)
+@@ -68,11 +68,14 @@ static mmu_section_t default_mmu_section_table[] =
+ {
+ /*       Physical addr,    Virtual addr,     Mapping type ,              Size (in MB),            Flags */
+     {    0x00000000,        0x00000000,       MMU_L2_NS_SECTION_MAPPING,  512,                IOMAP_MEMORY},
+-    {    MEMBASE,           MEMBASE,          MMU_L2_NS_SECTION_MAPPING,  (MEMSIZE / MB),      LK_MEMORY},
+-    {    MIPI_FB_ADDR,      MIPI_FB_ADDR,     MMU_L2_NS_SECTION_MAPPING,  40,                  LK_MEMORY},
+-    {    SCRATCH_ADDR,      SCRATCH_ADDR,     MMU_L2_NS_SECTION_MAPPING,  SCRATCH_SIZE,        SCRATCH_MEMORY},
+-    {    MSM_SHARED_BASE,   MSM_SHARED_BASE,  MMU_L2_NS_SECTION_MAPPING,  MSM_SHARED_SIZE,     COMMON_MEMORY},
+-    {    RPMB_SND_RCV_BUF,  RPMB_SND_RCV_BUF, MMU_L2_NS_SECTION_MAPPING,  RPMB_SND_RCV_BUF_SZ, IOMAP_MEMORY},
++	{    MEMBASE,           MEMBASE,          MMU_L2_NS_SECTION_MAPPING,  (MEMSIZE / MB),      LK_MEMORY},
++	{    MIPI_FB_ADDR,      MIPI_FB_ADDR,     MMU_L2_NS_SECTION_MAPPING,  40,                  LK_MEMORY},
++	{    SCRATCH_ADDR,      SCRATCH_ADDR,     MMU_L2_NS_SECTION_MAPPING,  SCRATCH_SIZE,        SCRATCH_MEMORY},
++	/* x2 debug lklog area (pstore console prz) - must be mapped before the
++	 * first dputs() so early markers survive a crashed boot session */
++	{    0x915A0000,        0x915A0000,       MMU_L2_NS_SECTION_MAPPING,  1,                   LK_MEMORY},
++	{    MSM_SHARED_BASE,   MSM_SHARED_BASE,  MMU_L2_NS_SECTION_MAPPING,  MSM_SHARED_SIZE,     COMMON_MEMORY},
++	{    RPMB_SND_RCV_BUF,  RPMB_SND_RCV_BUF, MMU_L2_NS_SECTION_MAPPING,  RPMB_SND_RCV_BUF_SZ, IOMAP_MEMORY},
+ };
+ 
+ /* Map the ddr for download mode, this region belongs to non-hlos images and pil */
+@@ -134,19 +137,64 @@ void platform_init_mmu_mappings(void)
  #endif
  	uint64_t ddr_size = smem_get_ddr_size();
  
@@ -331,7 +351,7 @@ index 1fc7045..f7005e2 100644
  
  #if LPAE
  	kernel_mmu_section_table.paddress = ddr_start;
-@@ -208,7 +253,20 @@ addr_t platform_get_virt_to_phys_mapping(addr_t virt_addr)
+@@ -208,7 +256,20 @@ addr_t platform_get_virt_to_phys_mapping(addr_t virt_addr)
  addr_t platform_get_phys_to_virt_mapping(addr_t phys_addr)
  {
  #if LPAE
