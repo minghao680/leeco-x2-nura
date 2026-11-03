@@ -214,6 +214,68 @@ index 64ef6f6..5ee97d7 100644
  	_dputc(c);
  
  	return INT_MAX;
+diff --git a/platform/msm8996/platform.c b/platform/msm8996/platform.c
+index 1fc7045..a38793b 100644
+--- a/platform/msm8996/platform.c
++++ b/platform/msm8996/platform.c
+@@ -134,19 +134,45 @@ void platform_init_mmu_mappings(void)
+ #endif
+ 	uint64_t ddr_size = smem_get_ddr_size();
+ 
+-	switch(ddr_size)
++	/*
++	 * DDR base must come from the firmware's own memory description, not
++	 * from summing SMEM RAM partitions:
++	 *
++	 * On LPAE boards (4 GB installed, e.g. LeEco Le Max 2) XBL describes
++	 * memory as  <0x0 0x80000000 0x0 0xC0000000> + <0x1 0x0 0x0 0xBD950000>,
++	 * i.e. DDR starts at 0x80000000. Summing only the partition sizes adds
++	 * up to 0x180000000, which the switch below happily classifies as
++	 * MEM_6GB -> ddr_start = 0x40000000. The kernel is then staged at
++	 * 0x40008000, which is exactly where lk2nd itself runs, so the jump
++	 * kills the bootloader and the phone silently resets.
++	 *
++	 * smem_ram_ptable_ddr_start() returns the start of the DDR partition
++	 * (0x80000000 here) and is authoritative. Keep the size-based switch
++	 * only as a fallback for boards whose RAM table is unavailable.
++	 */
+ 	{
+-		case MEM_4GB:
+-		case MEM_3GB:
+-			ddr_start = 0x80000000;
+-			break;
+-		case MEM_6GB:
+-			ddr_start = 0x40000000;
+-			break;
+-		default:
+-			dprintf(CRITICAL, "Unsupported ddr\n");
+-			ASSERT(0);
+-	};
++		uint64_t smem_start = get_ddr_start();
++
++		if (smem_start)
++			ddr_start = smem_start;
++		else
++			switch(ddr_size)
++			{
++				case MEM_4GB:
++				case MEM_3GB:
++					ddr_start = 0x80000000;
++					break;
++				case MEM_6GB:
++					ddr_start = 0x40000000;
++					break;
++				default:
++					dprintf(CRITICAL, "Unsupported ddr\n");
++					ASSERT(0);
++			};
++	}
++
++	dprintf(INFO, "x2dbg: ddr_size=%llx ddr_start=%llx\n",
++		(unsigned long long)ddr_size, (unsigned long long)ddr_start);
+ 
+ #if LPAE
+ 	kernel_mmu_section_table.paddress = ddr_start;
 diff --git a/platform/msm_shared/scm.c b/platform/msm_shared/scm.c
 index 8c76083..66d9426 100644
 --- a/platform/msm_shared/scm.c
