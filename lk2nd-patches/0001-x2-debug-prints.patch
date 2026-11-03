@@ -569,7 +569,7 @@ index 86757c0..87f5631 100644
  		*((uint32_t *)(kernel + app_dtb_offset)) = 0;
  		return tags;
 diff --git a/platform/msm_shared/scm.c b/platform/msm_shared/scm.c
-index 8c76083..4c338f0 100644
+index 8c76083..80be525 100644
 --- a/platform/msm_shared/scm.c
 +++ b/platform/msm_shared/scm.c
 @@ -120,6 +120,12 @@ void scm_init(void)
@@ -585,7 +585,7 @@ index 8c76083..4c338f0 100644
  	if (ret < 0)
  		dprintf(CRITICAL, "Failed to initialize SCM\n");
  
-@@ -1049,42 +1055,70 @@ int scm_halt_pmic_arbiter(void)
+@@ -1049,42 +1055,69 @@ int scm_halt_pmic_arbiter(void)
  
  void scm_elexec_call(paddr_t kernel_entry, paddr_t dtb_offset)
  {
@@ -650,8 +650,7 @@ index 8c76083..4c338f0 100644
 -		scm_arg.x2 = (uint32_t ) &param;
 -		scm_arg.x3 = sizeof(el1_system_param);
  
-+	dprintf(INFO, "x2dbg: vendor-style elexec elr=%x x0=%x
-+",
++	dprintf(INFO, "x2dbg: vendor-style elexec elr=%x x0=%x\n",
 +		(unsigned)kernel_entry, (unsigned)dtb_offset);
 +
 +	if (!is_scm_armv8_support()) {
