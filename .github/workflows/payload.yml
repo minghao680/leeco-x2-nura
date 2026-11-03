@@ -92,6 +92,19 @@ jobs:
           python3 scripts/make-bootimg.py payload/minimal.gz             msm8996-leeco-x2.dtb boot-minimal.img
           ls -l boot-minimal.img
 
+      - name: Assemble CPU-state report payload
+        run: |
+          set -eo pipefail
+          cd payload
+          aarch64-linux-gnu-gcc -c state.S -o state.o -nostdlib
+          aarch64-linux-gnu-objcopy -O binary state.o state.bin
+          gzip -9c state.bin > state.gz
+          aarch64-linux-gnu-objdump -d state.o | head -25
+          cd ..
+          python3 scripts/make-bootimg.py payload/state.gz \
+            msm8996-leeco-x2.dtb boot-state.img
+          ls -l boot-state.img
+
       - name: Wrap into boot.img
         run: |
           set -eo pipefail
@@ -110,6 +123,8 @@ jobs:
             msm8996-leeco-x2.dtb
             boot-payload.img
             boot-minimal.img
+            boot-state.img
             payload/minimal.gz
+            payload/state.gz
           if-no-files-found: error
           retention-days: 30
