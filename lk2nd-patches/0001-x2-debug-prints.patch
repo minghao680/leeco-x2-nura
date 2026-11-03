@@ -234,7 +234,7 @@ index 64ef6f6..21428a7 100644
 +	dprintf(INFO, "x2dbg: %s\n", x2_ddr_str);
 +}
 diff --git a/platform/msm8996/platform.c b/platform/msm8996/platform.c
-index 1fc7045..4013c33 100644
+index 1fc7045..f7005e2 100644
 --- a/platform/msm8996/platform.c
 +++ b/platform/msm8996/platform.c
 @@ -134,19 +134,64 @@ void platform_init_mmu_mappings(void)
@@ -314,6 +314,28 @@ index 1fc7045..4013c33 100644
  
  #if LPAE
  	kernel_mmu_section_table.paddress = ddr_start;
+@@ -208,7 +253,20 @@ addr_t platform_get_virt_to_phys_mapping(addr_t virt_addr)
+ addr_t platform_get_phys_to_virt_mapping(addr_t phys_addr)
+ {
+ #if LPAE
+-	return physical_to_virtual_mapping(phys_addr);
++	/*
++	 * x2 (and msm8996 LPAE boards generally) must use identity mapping
++	 * here: the kernel is entered with the MMU OFF, so the address put in
++	 * hdr->kernel_addr is used as a PHYSICAL address at jump time.
++	 *
++	 * physical_to_virtual_mapping() reverse-looks-up the LK page table
++	 * and returns the VA slot that maps this PA. On x2 the L1 slot for
++	 * 0x80000000 is index 1, so PA 0x80080000 came back as VA 0x40008000
++	 * - the address lk2nd itself occupies. The kernel was copied over
++	 * lk2nd and the jump silently reset the phone (ramoops markers
++	 * MK0-MK2 fire, MK3 never does).
++	 */
++	(void)phys_addr;
++	return phys_addr;
+ #else
+ 	/* Using 1-1 mapping on this platform. */
+ 	return phys_addr;
 diff --git a/platform/msm_shared/scm.c b/platform/msm_shared/scm.c
 index 8c76083..66d9426 100644
 --- a/platform/msm_shared/scm.c
