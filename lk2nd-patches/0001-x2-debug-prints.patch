@@ -444,6 +444,44 @@ index 1fc7045..c1d2c31 100644
  #else
  	/* Using 1-1 mapping on this platform. */
  	return phys_addr;
+diff --git a/platform/msm_shared/dev_tree.c b/platform/msm_shared/dev_tree.c
+index 86757c0..a33cb0f 100644
+--- a/platform/msm_shared/dev_tree.c
++++ b/platform/msm_shared/dev_tree.c
+@@ -1297,6 +1297,33 @@ void *dev_tree_appended(void *kernel, uint32_t kernel_size, uint32_t dtb_offset,
+ 	else
+ 		memcpy((void*) &app_dtb_offset, (void*) (kernel + DTB_OFFSET), sizeof(uint32_t));
+ 
++	/*
++	 * x2: decompress() reports the compressed-stream end, which lands a
++	 * few bytes inside the appended DTB (gzip trailer/padding). Verify the
++	 * FDT magic there and, if it is wrong, scan the whole kernel blob.
++	 * Without this the single-DTB fallback below copies from the wrong
++	 * offset: tags_addr ends up with magic 0x00000001 and
++	 * update_device_tree() panics with "Invalid device tree header".
++	 */
++	{
++		const unsigned char *b = (const unsigned char *)kernel;
++		uint32_t i;
++
++		if (kernel_size < 16 ||
++		    !(b[app_dtb_offset] == 0xd0 && b[app_dtb_offset+1] == 0x0d &&
++		      b[app_dtb_offset+2] == 0xfe && b[app_dtb_offset+3] == 0xed)) {
++			for (i = 0; i + 8 <= kernel_size; i += 4) {
++				if (b[i] == 0xd0 && b[i+1] == 0x0d &&
++				    b[i+2] == 0xfe && b[i+3] == 0xed) {
++					dprintf(INFO, "x2dbg: dev_tree_appended: FDT at +0x%x (offset said 0x%x)\n",
++						i, app_dtb_offset);
++					app_dtb_offset = i;
++					break;
++				}
++			}
++		}
++	}
++
+ 	/* Check for dtbo support */
+ #if !DTBO_DISABLED
+ 	ret = dev_tree_appended_with_dtbo(kernel, kernel_size, app_dtb_offset, tags);
 diff --git a/platform/msm_shared/scm.c b/platform/msm_shared/scm.c
 index 8c76083..66d9426 100644
 --- a/platform/msm_shared/scm.c
