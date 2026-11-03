@@ -1,5 +1,5 @@
 diff --git a/app/aboot/aboot.c b/app/aboot/aboot.c
-index b44a5c2..3989e55 100644
+index b44a5c2..695bb60 100644
 --- a/app/aboot/aboot.c
 +++ b/app/aboot/aboot.c
 @@ -158,6 +158,8 @@ struct fastboot_cmd_desc {
@@ -142,7 +142,7 @@ index b44a5c2..3989e55 100644
 +
 +	if (!fb)
 +		return;
-+	y = (int)fb->height - (4 - row) * 12 * 2;
++	y = (int)fb->height - (8 - row) * 12 * 2;
 +	if (y < 0)
 +		return;
 +	while (*str) {
@@ -572,7 +572,7 @@ index 86757c0..87f5631 100644
  		*((uint32_t *)(kernel + app_dtb_offset)) = 0;
  		return tags;
 diff --git a/platform/msm_shared/scm.c b/platform/msm_shared/scm.c
-index 8c76083..0794881 100644
+index 8c76083..e0fa2bf 100644
 --- a/platform/msm_shared/scm.c
 +++ b/platform/msm_shared/scm.c
 @@ -1059,7 +1059,18 @@ void scm_elexec_call(paddr_t kernel_entry, paddr_t dtb_offset)
@@ -581,8 +581,8 @@ index 8c76083..0794881 100644
  
 +	{
 +		extern void x2_screen_hex(int, const char *, unsigned);
-+		x2_screen_hex(2, "elr", (unsigned)param.el1_elr);
-+		x2_screen_hex(3, "x0", (unsigned)param.el1_x0);
++		x2_screen_hex(4, "elr", (unsigned)param.el1_elr);
++		x2_screen_hex(5, "x0", (unsigned)param.el1_x0);
 +		dprintf(INFO, "x2dbg: elexec elr=%x x0=%x armv8=%d\n",
 +			(unsigned)param.el1_elr, (unsigned)param.el1_x0,
 +			is_scm_armv8_support() ? 1 : 0);
