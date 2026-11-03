@@ -1,5 +1,5 @@
 diff --git a/app/aboot/aboot.c b/app/aboot/aboot.c
-index b44a5c2..46dd6bc 100644
+index b44a5c2..75b797c 100644
 --- a/app/aboot/aboot.c
 +++ b/app/aboot/aboot.c
 @@ -158,6 +158,8 @@ struct fastboot_cmd_desc {
@@ -47,22 +47,19 @@ index b44a5c2..46dd6bc 100644
 +	dprintf(INFO, "x2dbg: platform_uninit done\n");
 +	x2_screen_line(2, "platform uninit done");
  
--#if ARM_WITH_MMU
--	arch_disable_mmu();
--#endif
 +	/*
-+	 * Hand the arm64 kernel over through the TZ monitor with the MMU left
-+	 * on. Clearing CR1.M here faults immediately: lk2nd runs at
-+	 * VA 0x40008000 = PA 0x8000 and the fetch after the MMU goes down uses
-+	 * the physical address, which is not where the PC is (proof:
-+	 * MK2:mmu-off is the last marker before the reset; MK3 inside
-+	 * scm_elexec_call never runs).
-+	 *
-+	 * scm_elexec_call() is designed for exactly this: it passes
-+	 * el1_x0 = DTB and el1_elr = kernel entry to the monitor, which sets up
-+	 * the EL1/EL2 state and drops the MMU itself during the 32->64 switch.
++	 * arm64 boot protocol: hand the kernel over with MMU and caches off.
++	 * The low 512 MB window is identity-mapped as normal executable memory
++	 * (see default_mmu_section_table), so the fetch that follows CR1.M=0
++	 * resolves to lk2nd's physical address and execution continues.
++	 * The TZ monitor performs the 32->64 switch from there.
 +	 */
-+	dprintf(INFO, "x2dbg: entering monitor with MMU on\n");
++	dprintf(INFO, "x2dbg: tearing down cache+mmu before arm64 entry\n");
++	arch_disable_cache(UCACHE);
+ #if ARM_WITH_MMU
+ 	arch_disable_mmu();
+ #endif
++	x2_screen_line(3, "mmu off, calling monitor");
  	bs_set_timestamp(BS_KERNEL_ENTRY);
  
  	if (IS_ARM64(kptr))
@@ -572,7 +569,7 @@ index 86757c0..87f5631 100644
  		*((uint32_t *)(kernel + app_dtb_offset)) = 0;
  		return tags;
 diff --git a/platform/msm_shared/scm.c b/platform/msm_shared/scm.c
-index 8c76083..d3dbdcf 100644
+index 8c76083..9531d5a 100644
 --- a/platform/msm_shared/scm.c
 +++ b/platform/msm_shared/scm.c
 @@ -120,6 +120,12 @@ void scm_init(void)
@@ -588,7 +585,7 @@ index 8c76083..d3dbdcf 100644
  	if (ret < 0)
  		dprintf(CRITICAL, "Failed to initialize SCM\n");
  
-@@ -1059,7 +1065,18 @@ void scm_elexec_call(paddr_t kernel_entry, paddr_t dtb_offset)
+@@ -1059,28 +1065,48 @@ void scm_elexec_call(paddr_t kernel_entry, paddr_t dtb_offset)
  	param.el1_x0 = dtb_offset;
  	param.el1_elr = kernel_entry;
  
@@ -606,10 +603,42 @@ index 8c76083..d3dbdcf 100644
 +		(void*)param.el1_x0, (void*)param.el1_elr);
  	dprintf(INFO, "Jumping to kernel via monitor\n");
  
- 	if (!is_scm_armv8_support())
-@@ -1081,6 +1098,7 @@ void scm_elexec_call(paddr_t kernel_entry, paddr_t dtb_offset)
+-	if (!is_scm_armv8_support())
++	/*
++	 * x2: the LeEco TZ hangs on the armv8 scm_call2 convention for the
++	 * milestone call (panel diagnostics showed elr/x0 drawn correctly,
++	 * then silence - no return, no jump). The vendor bootloader's own SCM
++	 * wrapper (disassembled at 0x9161be84) uses the legacy direct
++	 * convention, so try the legacy struct-based scm_call() first and only
++	 * fall back to scm_call2 if it returns at all.
++	 */
+ 	{
+-		/* Command Buffer */
++		extern void x2_screen_line(int, const char *);
+ 		cmd_buf = (void *)&param;
+ 		cmd_len = sizeof(el1_system_param);
+ 
+ 		scm_call(svc_id, cmd_id, cmd_buf, cmd_len, NULL, 0);
+-	}
+-	else
+-	{
+-		scm_arg.x0 = MAKE_SIP_SCM_CMD(SCM_SVC_MILESTONE_32_64_ID, SCM_SVC_MILESTONE_CMD_ID);
+-		scm_arg.x1 = MAKE_SCM_ARGS(0x2, SMC_PARAM_TYPE_BUFFER_READ);
+-		scm_arg.x2 = (uint32_t ) &param;
+-		scm_arg.x3 = sizeof(el1_system_param);
+ 
+-		scm_call2(&scm_arg, NULL);
++		x2_screen_line(6, "legacy milestone RETURNED");
++		dprintf(INFO, "x2dbg: legacy milestone returned, trying scm_call2\n");
  	}
  
++	scm_arg.x0 = MAKE_SIP_SCM_CMD(SCM_SVC_MILESTONE_32_64_ID, SCM_SVC_MILESTONE_CMD_ID);
++	scm_arg.x1 = MAKE_SCM_ARGS(0x2, SMC_PARAM_TYPE_BUFFER_READ);
++	scm_arg.x2 = (uint32_t ) &param;
++	scm_arg.x3 = sizeof(el1_system_param);
++
++	scm_call2(&scm_arg, NULL);
++
  	/* Assert if execution ever reaches here */
 +	dprintf(CRITICAL, "x2dbg: RETURNED FROM MONITOR - jump failed\n");
  	dprintf(CRITICAL, "Failed to jump to kernel\n");
