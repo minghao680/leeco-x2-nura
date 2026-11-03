@@ -1,8 +1,8 @@
 diff --git a/app/aboot/aboot.c b/app/aboot/aboot.c
-index b44a5c2..9087d4c 100644
+index b44a5c2..effc627 100644
 --- a/app/aboot/aboot.c
 +++ b/app/aboot/aboot.c
-@@ -1296,16 +1296,30 @@ tags_done:
+@@ -1296,24 +1296,41 @@ tags_done:
  	dprintf(INFO, "booting linux @ %p, ramdisk @ %p (%d), tags/device tree @ %p\n",
  		entry, ramdisk, ramdisk_size, (void *)tags_phys);
  
@@ -12,28 +12,45 @@ index b44a5c2..9087d4c 100644
  	/* do any platform specific cleanup before kernel entry */
  	platform_uninit();
  
+-	arch_disable_cache(UCACHE);
 +	dprintf(INFO, "x2dbg: platform_uninit done\n");
-+
- 	arch_disable_cache(UCACHE);
  
-+	dprintf(INFO, "x2dbg: cache disabled\n");
+-#if ARM_WITH_MMU
+-	arch_disable_mmu();
+-#endif
++	/*
++	 * x2/msm8996 LPAE: do NOT disable cache/MMU here for the arm64 path.
++	 *
++	 * lk2nd runs at VA 0x40008000 (PA 0x8000) under the LPAE page table.
++	 * Clearing CR1.M makes the CPU fetch the next instruction from
++	 * physical 0x40008000, which has no DRAM on this board - execution
++	 * dies before scm_elexec_call() is ever reached (ramoops markers show
++	 * MK2 then silence). The SCM monitor entry manages EL/cache state
++	 * itself for the 32->64 transition, so leave the MMU on.
++	 */
 +	{
 +		extern void x2_lklog_marker(const char *);
-+		x2_lklog_marker_raw("MK1:cache-off");
-+	}
-+
- #if ARM_WITH_MMU
- 	arch_disable_mmu();
- #endif
-+	dprintf(INFO, "x2dbg: mmu disabled, calling monitor next\n");
-+	{
-+		extern void x2_lklog_marker(const char *);
-+		x2_lklog_marker_raw("MK2:mmu-off");
++		x2_lklog_marker_raw("MK1b:skip-cache-mmu-off");
 +	}
  	bs_set_timestamp(BS_KERNEL_ENTRY);
  
  	if (IS_ARM64(kptr))
-@@ -3460,6 +3474,15 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
+ 		/* Jump to a 64bit kernel */
+ 		scm_elexec_call((paddr_t)kernel, tags_phys);
+-	else
+-		/* Jump to a 32bit kernel */
++	else {
++		/* 32-bit kernels still need the legacy teardown */
++		arch_disable_cache(UCACHE);
++#if ARM_WITH_MMU
++		arch_disable_mmu();
++#endif
+ 		entry(0, machtype, (unsigned*)tags_phys);
++	}
+ }
+ 
+ /* Function to check if the memory address range falls within the aboot
+@@ -3460,6 +3477,15 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
  	memmove((void*) hdr->ramdisk_addr, ptr + page_size + kernel_actual, hdr->ramdisk_size);
  	memmove((void*) hdr->kernel_addr, (char*) (kernel_start_addr), kernel_size);
  
@@ -49,7 +66,7 @@ index b44a5c2..9087d4c 100644
  	fastboot_okay("");
  	fastboot_stop();
  
-@@ -3469,6 +3492,11 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
+@@ -3469,6 +3495,11 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
  	thread_sleep(LK2ND_FASTBOOT_DELAY);
  	#endif
  
@@ -61,7 +78,7 @@ index b44a5c2..9087d4c 100644
  	boot_linux((void*) hdr->kernel_addr, (void*) hdr->tags_addr,
  		   (const char*) hdr->cmdline, board_machtype(),
  		   (void*) hdr->ramdisk_addr, hdr->ramdisk_size,
-@@ -3491,8 +3519,7 @@ void cmd_erase_nand(const char *arg, void *data, unsigned sz)
+@@ -3491,8 +3522,7 @@ void cmd_erase_nand(const char *arg, void *data, unsigned sz)
  
  	ptable = flash_get_ptable();
  	if (ptable == NULL) {
