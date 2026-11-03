@@ -1,5 +1,5 @@
 diff --git a/app/aboot/aboot.c b/app/aboot/aboot.c
-index b44a5c2..8d84d4e 100644
+index b44a5c2..c8c319a 100644
 --- a/app/aboot/aboot.c
 +++ b/app/aboot/aboot.c
 @@ -158,6 +158,8 @@ struct fastboot_cmd_desc {
@@ -24,13 +24,20 @@ index b44a5c2..8d84d4e 100644
  	if (IS_ARM64(kptr))
  		boot_type |= BOOT_ARM64;
  	if (strstr(cmdline, "androidboot"))
-@@ -1296,24 +1304,44 @@ tags_done:
+@@ -1296,24 +1304,51 @@ tags_done:
  	dprintf(INFO, "booting linux @ %p, ramdisk @ %p (%d), tags/device tree @ %p\n",
  		entry, ramdisk, ramdisk_size, (void *)tags_phys);
  
 +	dprintf(INFO, "x2dbg: boot_linux pre-uninit: entry=%p tags=%p\n", entry, (void*)tags_phys);
 +	x2_screen_line(0, "x2: boot_linux entered");
-+	x2_screen_line(1, IS_ARM64(kptr) ? "arm64 kernel" : "32bit kernel");
++	{
++		/* IS_ARM64() expands without enclosing parens, so never nest it
++		 * inside another ?: - that makes the whole expression collapse
++		 * and passes "true" (address 0x1) to the drawing helper. */
++		const char *arch = (kptr->magic_64 == KERNEL64_HDR_MAGIC)
++				 ? "arm64 kernel" : "32bit kernel";
++		x2_screen_line(1, arch);
++	}
  	enter_critical_section();
  
  	/* do any platform specific cleanup before kernel entry */
@@ -75,7 +82,7 @@ index b44a5c2..8d84d4e 100644
  }
  
  /* Function to check if the memory address range falls within the aboot
-@@ -3074,6 +3102,17 @@ int copy_dtb(uint8_t *boot_image_start, unsigned int scratch_offset)
+@@ -3074,6 +3109,17 @@ int copy_dtb(uint8_t *boot_image_start, unsigned int scratch_offset)
  	dt_size = hdr->dt_size;
  #endif
  
@@ -93,7 +100,7 @@ index b44a5c2..8d84d4e 100644
  	if(dt_size != 0) {
  		/* add kernel offset */
  		dt_image_offset += page_size;
-@@ -3149,6 +3188,30 @@ int copy_dtb(uint8_t *boot_image_start, unsigned int scratch_offset)
+@@ -3149,6 +3195,30 @@ int copy_dtb(uint8_t *boot_image_start, unsigned int scratch_offset)
  }
  #endif
  
@@ -124,7 +131,7 @@ index b44a5c2..8d84d4e 100644
  void cmd_boot(const char *arg, void *data, unsigned sz)
  {
  	unsigned kernel_actual;
-@@ -3441,6 +3504,31 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
+@@ -3441,6 +3511,31 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
  	 */
  	if (!dtb_copied) {
  		void *dtb;
@@ -156,7 +163,7 @@ index b44a5c2..8d84d4e 100644
  		dtb = dev_tree_appended((void*)(ptr + page_size),
  					hdr->kernel_size, dtb_offset,
  					(void *)hdr->tags_addr);
-@@ -3460,6 +3548,15 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
+@@ -3460,6 +3555,15 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
  	memmove((void*) hdr->ramdisk_addr, ptr + page_size + kernel_actual, hdr->ramdisk_size);
  	memmove((void*) hdr->kernel_addr, (char*) (kernel_start_addr), kernel_size);
  
@@ -172,7 +179,7 @@ index b44a5c2..8d84d4e 100644
  	fastboot_okay("");
  	fastboot_stop();
  
-@@ -3469,6 +3566,7 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
+@@ -3469,6 +3573,7 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
  	thread_sleep(LK2ND_FASTBOOT_DELAY);
  	#endif
  
@@ -180,7 +187,7 @@ index b44a5c2..8d84d4e 100644
  	boot_linux((void*) hdr->kernel_addr, (void*) hdr->tags_addr,
  		   (const char*) hdr->cmdline, board_machtype(),
  		   (void*) hdr->ramdisk_addr, hdr->ramdisk_size,
-@@ -3491,8 +3589,7 @@ void cmd_erase_nand(const char *arg, void *data, unsigned sz)
+@@ -3491,8 +3596,7 @@ void cmd_erase_nand(const char *arg, void *data, unsigned sz)
  
  	ptable = flash_get_ptable();
  	if (ptable == NULL) {
