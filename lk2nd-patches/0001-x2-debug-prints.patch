@@ -72,7 +72,7 @@ index b44a5c2..9087d4c 100644
  
  	ptn = ptable_find(ptable, arg);
 diff --git a/lib/debug/debug.c b/lib/debug/debug.c
-index 64ef6f6..5ee97d7 100644
+index 64ef6f6..21428a7 100644
 --- a/lib/debug/debug.c
 +++ b/lib/debug/debug.c
 @@ -29,6 +29,8 @@
@@ -214,11 +214,30 @@ index 64ef6f6..5ee97d7 100644
  	_dputc(c);
  
  	return INT_MAX;
+@@ -383,3 +499,18 @@ static int cmd_memtest(int argc, const cmd_args *argv)
+ 
+ #endif
+  
++
++/* Publish the DDR decision as a fastboot variable for headless debugging. */
++static char x2_ddr_str[48];
++static void x2_ddr_fastboot_register(void)
++{
++	fastboot_publish("x2ddr", x2_ddr_str);
++}
++FASTBOOT_INIT(x2_ddr_fastboot_register);
++
++void x2_ddr_publish(uint64_t size, uint64_t start)
++{
++	snprintf(x2_ddr_str, sizeof(x2_ddr_str), "size=%llx,start=%llx",
++		 (unsigned long long)size, (unsigned long long)start);
++	dprintf(INFO, "x2dbg: %s\n", x2_ddr_str);
++}
 diff --git a/platform/msm8996/platform.c b/platform/msm8996/platform.c
-index 1fc7045..afd0859 100644
+index 1fc7045..4013c33 100644
 --- a/platform/msm8996/platform.c
 +++ b/platform/msm8996/platform.c
-@@ -134,19 +134,60 @@ void platform_init_mmu_mappings(void)
+@@ -134,19 +134,64 @@ void platform_init_mmu_mappings(void)
  #endif
  	uint64_t ddr_size = smem_get_ddr_size();
  
@@ -288,6 +307,10 @@ index 1fc7045..afd0859 100644
 +
 +	dprintf(INFO, "x2dbg: ddr_size=%llx ddr_start=%llx\n",
 +		(unsigned long long)ddr_size, (unsigned long long)ddr_start);
++	{
++		extern void x2_ddr_publish(uint64_t size, uint64_t start);
++		x2_ddr_publish(ddr_size, ddr_start);
++	}
  
  #if LPAE
  	kernel_mmu_section_table.paddress = ddr_start;
