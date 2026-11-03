@@ -569,7 +569,7 @@ index 86757c0..87f5631 100644
  		*((uint32_t *)(kernel + app_dtb_offset)) = 0;
  		return tags;
 diff --git a/platform/msm_shared/scm.c b/platform/msm_shared/scm.c
-index 8c76083..de1d351 100644
+index 8c76083..2ba89d1 100644
 --- a/platform/msm_shared/scm.c
 +++ b/platform/msm_shared/scm.c
 @@ -120,6 +120,12 @@ void scm_init(void)
@@ -585,59 +585,63 @@ index 8c76083..de1d351 100644
  	if (ret < 0)
  		dprintf(CRITICAL, "Failed to initialize SCM\n");
  
-@@ -1059,28 +1065,63 @@ void scm_elexec_call(paddr_t kernel_entry, paddr_t dtb_offset)
- 	param.el1_x0 = dtb_offset;
- 	param.el1_elr = kernel_entry;
+@@ -1049,42 +1055,71 @@ int scm_halt_pmic_arbiter(void)
  
-+	{
-+		extern void x2_screen_hex(int, const char *, unsigned);
-+		x2_screen_hex(4, "elr", (unsigned)param.el1_elr);
-+		x2_screen_hex(5, "x0", (unsigned)param.el1_x0);
-+		dprintf(INFO, "x2dbg: elexec elr=%x x0=%x armv8=%d\n",
-+			(unsigned)param.el1_elr, (unsigned)param.el1_x0,
-+			is_scm_armv8_support() ? 1 : 0);
-+	}
-+
- 	/* Response Buffer = Null as no response expected */
-+	dprintf(INFO, "x2dbg: elexec param el1_x0=%p el1_elr=%p\n",
-+		(void*)param.el1_x0, (void*)param.el1_elr);
- 	dprintf(INFO, "Jumping to kernel via monitor\n");
+ void scm_elexec_call(paddr_t kernel_entry, paddr_t dtb_offset)
+ {
+-	uint32_t svc_id = SCM_SVC_MILESTONE_32_64_ID;
+-	uint32_t cmd_id = SCM_SVC_MILESTONE_CMD_ID;
+-	void *cmd_buf;
+-	size_t cmd_len;
+-	static el1_system_param param __attribute__((aligned(0x1000)));
+-	scmcall_arg scm_arg = {0};
+-
+-	param.el1_x0 = dtb_offset;
+-	param.el1_elr = kernel_entry;
++	/*
++	 * x2: byte-for-byte clone of the LeEco vendor bootloader's elexec
++	 * (disassembled at 0x9161c9a4 in aboot.img). Every attempt to map it
++	 * onto lk2nd's generic helpers returned -1 from the TZ or hung.
++	 *
++	 * Vendor sequence:
++	 *   1. 0x50-byte param buffer in .bss
++	 *   2. [param+0x00] = dtb        (strd, 64-bit)
++	 *   3. [param+0x48] = kernel     (strd, 64-bit)  <- el1_elr at 0x48
++	 *   4. probe armv8 support
++	 *      - legacy:  scm_call(1, 0xf, NULL, 0x50, NULL, 0)
++	 *        (buf ptr NULL in r2! the params live in the fixed .bss
++	 *         buffer the TZ already knows about)
++	 *      - armv8 :  x0=0x0200010f, x1=0x12, x2=&param, x3=0x50
++	 *   5. no return expected; if it does return the boot fails
++	 *
++	 * The fixed buffer address is what the TZ expects; we replicate it
++	 * with a static aligned buffer and pass its address the same way.
++	 */
++	/*
++	 * The TZ reads the parameter block from a FIXED physical address -
++	 * 0x916C0000 in the vendor bootloader's .bss. That is why the legacy
++	 * call passes buf=NULL: both sides agreed on the address out of band.
++	 * Place our copy at exactly that address.
++	 */
++	static uint64_t * const x2_param = (uint64_t *)0x916C0000;
+ 
+-	/* Response Buffer = Null as no response expected */
+-	dprintf(INFO, "Jumping to kernel via monitor\n");
++	memset(x2_param, 0, 0x50);
++	x2_param[0] = dtb_offset;                    /* +0x00 el1_x0  */
++	x2_param[0x48 / 8] = kernel_entry;           /* +0x48 el1_elr */
++	arch_clean_invalidate_cache_range(0x916C0000, 0x50);
  
 -	if (!is_scm_armv8_support())
-+	/*
-+	 * x2: the LeEco TZ hangs on the armv8 scm_call2 convention for the
-+	 * milestone call (panel diagnostics showed elr/x0 drawn correctly,
-+	 * then silence - no return, no jump). The vendor bootloader's own SCM
-+	 * wrapper (disassembled at 0x9161be84) uses the legacy direct
-+	 * convention, so try the legacy struct-based scm_call() first and only
-+	 * fall back to scm_call2 if it returns at all.
-+	 */
  	{
 -		/* Command Buffer */
-+		extern void x2_screen_line(int, const char *);
- 		cmd_buf = (void *)&param;
- 		cmd_len = sizeof(el1_system_param);
- 
+-		cmd_buf = (void *)&param;
+-		cmd_len = sizeof(el1_system_param);
+-
 -		scm_call(svc_id, cmd_id, cmd_buf, cmd_len, NULL, 0);
-+		{
-+			/* capture the return value: scm_call() writes the response
-+			 * into the caller-provided buffer; pass a small one we can
-+			 * inspect afterwards */
-+			static uint32_t x2_resp[4] __attribute__((aligned(8)));
-+			int rc;
-+
-+			memset(x2_resp, 0, sizeof(x2_resp));
-+			rc = scm_call(svc_id, cmd_id, cmd_buf, cmd_len,
-+				      x2_resp, sizeof(x2_resp));
-+			{
-+				extern void x2_screen_hex(int, const char *, unsigned);
-+				x2_screen_hex(6, "lrc", (unsigned)rc);
-+				x2_screen_hex(7, "lr0", x2_resp[0]);
-+			}
-+			dprintf(INFO, "x2dbg: legacy milestone rc=%d resp0=%08x\n",
-+				rc, x2_resp[0]);
-+		}
-+		dprintf(INFO, "x2dbg: legacy milestone returned, trying scm_call2\n");
++		extern void x2_screen_hex(int, const char *, unsigned);
++		x2_screen_hex(4, "elr", (unsigned)kernel_entry);
++		x2_screen_hex(5, "x0", (unsigned)dtb_offset);
  	}
 -	else
 -	{
@@ -646,17 +650,35 @@ index 8c76083..de1d351 100644
 -		scm_arg.x2 = (uint32_t ) &param;
 -		scm_arg.x3 = sizeof(el1_system_param);
  
--		scm_call2(&scm_arg, NULL);
--	}
-+	scm_arg.x0 = MAKE_SIP_SCM_CMD(SCM_SVC_MILESTONE_32_64_ID, SCM_SVC_MILESTONE_CMD_ID);
-+	scm_arg.x1 = MAKE_SCM_ARGS(0x2, SMC_PARAM_TYPE_BUFFER_READ);
-+	scm_arg.x2 = (uint32_t ) &param;
-+	scm_arg.x3 = sizeof(el1_system_param);
++	dprintf(INFO, "x2dbg: vendor-style elexec elr=%x x0=%x
++",
++		(unsigned)kernel_entry, (unsigned)dtb_offset);
 +
-+	scm_call2(&scm_arg, NULL);
++	if (!is_scm_armv8_support()) {
++		/* legacy: the vendor passes buf=NULL, len=0x50 and keeps the
++		 * param block at a fixed address the TZ already knows */
++		scm_call(1, 0xf, NULL, 0x50, NULL, 0);
++	} else {
++		scmcall_arg scm_arg = {0};
++		scm_arg.x0 = 0x0200010F;                 /* SIP(1,0xf)   */
++		scm_arg.x1 = 0x12;                       /* 2 args, buf read */
++		scm_arg.x2 = (uint32_t)x2_param;
++		scm_arg.x3 = 0x50;
+ 		scm_call2(&scm_arg, NULL);
+ 	}
  
- 	/* Assert if execution ever reaches here */
-+	dprintf(CRITICAL, "x2dbg: RETURNED FROM MONITOR - jump failed\n");
- 	dprintf(CRITICAL, "Failed to jump to kernel\n");
+-	/* Assert if execution ever reaches here */
+-	dprintf(CRITICAL, "Failed to jump to kernel\n");
++	{
++		extern void x2_screen_line(int, const char *);
++		x2_screen_line(6, "elexec RETURNED - boot failed");
++	}
++	dprintf(CRITICAL, "x2dbg: RETURNED FROM MONITOR
++");
  	ASSERT(0);
  }
+ 
++
+ /* SCM Random Command */
+ int scm_random(uintptr_t * rbuf, uint32_t  r_len)
+ {
