@@ -1,5 +1,5 @@
 diff --git a/app/aboot/aboot.c b/app/aboot/aboot.c
-index b44a5c2..f4149af 100644
+index b44a5c2..efde424 100644
 --- a/app/aboot/aboot.c
 +++ b/app/aboot/aboot.c
 @@ -1215,6 +1215,12 @@ void boot_linux(void *kernel, unsigned *tags,
@@ -15,7 +15,7 @@ index b44a5c2..f4149af 100644
  	if (IS_ARM64(kptr))
  		boot_type |= BOOT_ARM64;
  	if (strstr(cmdline, "androidboot"))
-@@ -1296,24 +1302,41 @@ tags_done:
+@@ -1296,24 +1302,44 @@ tags_done:
  	dprintf(INFO, "booting linux @ %p, ramdisk @ %p (%d), tags/device tree @ %p\n",
  		entry, ramdisk, ramdisk_size, (void *)tags_phys);
  
@@ -28,22 +28,22 @@ index b44a5c2..f4149af 100644
 -	arch_disable_cache(UCACHE);
 +	dprintf(INFO, "x2dbg: platform_uninit done\n");
  
--#if ARM_WITH_MMU
--	arch_disable_mmu();
--#endif
 +	/*
-+	 * x2/msm8996 LPAE: do NOT disable cache/MMU here for the arm64 path.
++	 * arm64 boot protocol: caches and MMU must be off when control is
++	 * handed to the kernel; it installs its own translation regime.
 +	 *
-+	 * lk2nd runs at VA 0x40008000 (PA 0x8000) under the LPAE page table.
-+	 * Clearing CR1.M makes the CPU fetch the next instruction from
-+	 * physical 0x40008000, which has no DRAM on this board - execution
-+	 * dies before scm_elexec_call() is ever reached (ramoops markers show
-+	 * MK2 then silence). The SCM monitor entry manages EL/cache state
-+	 * itself for the 32->64 transition, so leave the MMU on.
++	 * The low 512 MB identity window is mapped as normal, executable
++	 * memory (see default_mmu_section_table), so the fetch that follows
++	 * CR1.M=0 still resolves to lk2nd's physical address 0x8000.
 +	 */
++	dprintf(INFO, "x2dbg: tearing down cache+mmu before arm64 entry\n");
++	arch_disable_cache(UCACHE);
+ #if ARM_WITH_MMU
+ 	arch_disable_mmu();
+ #endif
 +	{
-+		extern void x2_lklog_marker(const char *);
-+		x2_lklog_marker_raw(IS_ARM64(kptr) ? "MK1b:arm64-yes" : "MK1b:arm64-NO");
++		extern void x2_lklog_marker_raw(const char *);
++		x2_lklog_marker_raw("MK2:mmu-off");
 +	}
  	bs_set_timestamp(BS_KERNEL_ENTRY);
  
@@ -63,7 +63,7 @@ index b44a5c2..f4149af 100644
  }
  
  /* Function to check if the memory address range falls within the aboot
-@@ -3074,6 +3097,17 @@ int copy_dtb(uint8_t *boot_image_start, unsigned int scratch_offset)
+@@ -3074,6 +3100,17 @@ int copy_dtb(uint8_t *boot_image_start, unsigned int scratch_offset)
  	dt_size = hdr->dt_size;
  #endif
  
@@ -81,7 +81,7 @@ index b44a5c2..f4149af 100644
  	if(dt_size != 0) {
  		/* add kernel offset */
  		dt_image_offset += page_size;
-@@ -3441,6 +3475,31 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
+@@ -3441,6 +3478,31 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
  	 */
  	if (!dtb_copied) {
  		void *dtb;
@@ -113,7 +113,7 @@ index b44a5c2..f4149af 100644
  		dtb = dev_tree_appended((void*)(ptr + page_size),
  					hdr->kernel_size, dtb_offset,
  					(void *)hdr->tags_addr);
-@@ -3460,6 +3519,15 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
+@@ -3460,6 +3522,15 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
  	memmove((void*) hdr->ramdisk_addr, ptr + page_size + kernel_actual, hdr->ramdisk_size);
  	memmove((void*) hdr->kernel_addr, (char*) (kernel_start_addr), kernel_size);
  
@@ -129,7 +129,7 @@ index b44a5c2..f4149af 100644
  	fastboot_okay("");
  	fastboot_stop();
  
-@@ -3469,6 +3537,11 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
+@@ -3469,6 +3540,11 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
  	thread_sleep(LK2ND_FASTBOOT_DELAY);
  	#endif
  
@@ -141,7 +141,7 @@ index b44a5c2..f4149af 100644
  	boot_linux((void*) hdr->kernel_addr, (void*) hdr->tags_addr,
  		   (const char*) hdr->cmdline, board_machtype(),
  		   (void*) hdr->ramdisk_addr, hdr->ramdisk_size,
-@@ -3491,8 +3564,7 @@ void cmd_erase_nand(const char *arg, void *data, unsigned sz)
+@@ -3491,8 +3567,7 @@ void cmd_erase_nand(const char *arg, void *data, unsigned sz)
  
  	ptable = flash_get_ptable();
  	if (ptable == NULL) {
@@ -366,18 +366,33 @@ index c51fb4d..37ab65a 100644
  	if (out_len)
  		*out_len = stream->total_out;
 diff --git a/platform/msm8996/platform.c b/platform/msm8996/platform.c
-index 1fc7045..c1d2c31 100644
+index 1fc7045..42d9bb3 100644
 --- a/platform/msm8996/platform.c
 +++ b/platform/msm8996/platform.c
-@@ -68,11 +68,14 @@ static mmu_section_t default_mmu_section_table[] =
+@@ -67,12 +67,28 @@ static uint64_t ddr_start;
+ static mmu_section_t default_mmu_section_table[] =
  {
  /*       Physical addr,    Virtual addr,     Mapping type ,              Size (in MB),            Flags */
-     {    0x00000000,        0x00000000,       MMU_L2_NS_SECTION_MAPPING,  512,                IOMAP_MEMORY},
+-    {    0x00000000,        0x00000000,       MMU_L2_NS_SECTION_MAPPING,  512,                IOMAP_MEMORY},
 -    {    MEMBASE,           MEMBASE,          MMU_L2_NS_SECTION_MAPPING,  (MEMSIZE / MB),      LK_MEMORY},
 -    {    MIPI_FB_ADDR,      MIPI_FB_ADDR,     MMU_L2_NS_SECTION_MAPPING,  40,                  LK_MEMORY},
 -    {    SCRATCH_ADDR,      SCRATCH_ADDR,     MMU_L2_NS_SECTION_MAPPING,  SCRATCH_SIZE,        SCRATCH_MEMORY},
 -    {    MSM_SHARED_BASE,   MSM_SHARED_BASE,  MMU_L2_NS_SECTION_MAPPING,  MSM_SHARED_SIZE,     COMMON_MEMORY},
 -    {    RPMB_SND_RCV_BUF,  RPMB_SND_RCV_BUF, MMU_L2_NS_SECTION_MAPPING,  RPMB_SND_RCV_BUF_SZ, IOMAP_MEMORY},
++	/*
++	 * Low 512 MB is mapped identity and, unlike the stock table, as
++	 * normal cacheable/executable memory.
++	 *
++	 * lk2nd itself is loaded by XBL at physical 0x8000 inside this
++	 * window. boot_linux() must shut the MMU down right before entering
++	 * an arm64 kernel (that is the boot protocol; the kernel sets up its
++	 * own translation regime), and after CR1.M=0 the very next fetch
++	 * still uses the PC - so the code must be reachable with the MMU off,
++	 * i.e. at its physical address with normal memory attributes.
++	 * Mapping the window as IOMAP_MEMORY (device, XN) made that fetch
++	 * fail and the phone silently reset ~4s in.
++	 */
++    {    0x00000000,        0x00000000,       MMU_L2_NS_SECTION_MAPPING,  512,                LK_MEMORY},
 +	{    MEMBASE,           MEMBASE,          MMU_L2_NS_SECTION_MAPPING,  (MEMSIZE / MB),      LK_MEMORY},
 +	{    MIPI_FB_ADDR,      MIPI_FB_ADDR,     MMU_L2_NS_SECTION_MAPPING,  40,                  LK_MEMORY},
 +	{    SCRATCH_ADDR,      SCRATCH_ADDR,     MMU_L2_NS_SECTION_MAPPING,  SCRATCH_SIZE,        SCRATCH_MEMORY},
@@ -389,7 +404,7 @@ index 1fc7045..c1d2c31 100644
  };
  
  /* Map the ddr for download mode, this region belongs to non-hlos images and pil */
-@@ -134,19 +137,64 @@ void platform_init_mmu_mappings(void)
+@@ -134,19 +150,64 @@ void platform_init_mmu_mappings(void)
  #endif
  	uint64_t ddr_size = smem_get_ddr_size();
  
@@ -466,7 +481,7 @@ index 1fc7045..c1d2c31 100644
  
  #if LPAE
  	kernel_mmu_section_table.paddress = ddr_start;
-@@ -208,7 +256,20 @@ addr_t platform_get_virt_to_phys_mapping(addr_t virt_addr)
+@@ -208,7 +269,20 @@ addr_t platform_get_virt_to_phys_mapping(addr_t virt_addr)
  addr_t platform_get_phys_to_virt_mapping(addr_t phys_addr)
  {
  #if LPAE
