@@ -503,7 +503,7 @@ index 1fc7045..42d9bb3 100644
  	/* Using 1-1 mapping on this platform. */
  	return phys_addr;
 diff --git a/platform/msm_shared/dev_tree.c b/platform/msm_shared/dev_tree.c
-index 86757c0..018b4f5 100644
+index 86757c0..091d9fc 100644
 --- a/platform/msm_shared/dev_tree.c
 +++ b/platform/msm_shared/dev_tree.c
 @@ -1297,6 +1297,48 @@ void *dev_tree_appended(void *kernel, uint32_t kernel_size, uint32_t dtb_offset,
@@ -570,6 +570,33 @@ index 86757c0..018b4f5 100644
  
  	while (((uintptr_t)dtb + sizeof(struct fdt_header)) < (uintptr_t)kernel_end) {
  		struct fdt_header dtb_hdr __ALIGNED(8);
+@@ -1362,8 +1412,24 @@ void *dev_tree_appended(void *kernel, uint32_t kernel_size, uint32_t dtb_offset,
+ 		 */
+ 		dprintf(INFO, "Only one appended non-skales DTB, select it.\n");
+ 
+-		bestmatch_tag = kernel + app_dtb_offset;
+-		bestmatch_tag_size = dtb - (kernel + app_dtb_offset);
++		/*
++		 * x2: use the FDT header's totalsize. "dtb" has already been
++		 * advanced past the end of the blob by the scan loop above, so
++		 * dtb - (kernel + app_dtb_offset) is the distance to the blob
++		 * end, not the DTB length. Copying that much pulled garbage past
++		 * the DTB into tags_addr, whose magic then read 0x00000001 and
++		 * update_device_tree() panicked with "Invalid device tree
++		 * header".
++		 */
++		{
++			struct fdt_header th;
++			memcpy(&th, (const void *)((uintptr_t)kernel + app_dtb_offset),
++			       sizeof(th));
++			bestmatch_tag = kernel + app_dtb_offset;
++			bestmatch_tag_size = fdt_totalsize(&th);
++			dprintf(INFO, "x2dbg: fallback DTB size from header = 0x%x\n",
++				bestmatch_tag_size);
++		}
+ 	}
+ 
+ 	best_match_dt_entry = platform_dt_match_best(dt_entry_queue);
 diff --git a/platform/msm_shared/scm.c b/platform/msm_shared/scm.c
 index 8c76083..69d526f 100644
 --- a/platform/msm_shared/scm.c
