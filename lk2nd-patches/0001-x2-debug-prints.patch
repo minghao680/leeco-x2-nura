@@ -60,7 +60,7 @@ index b44a5c2..9568a96 100644
  
  	ptn = ptable_find(ptable, arg);
 diff --git a/lib/debug/debug.c b/lib/debug/debug.c
-index 64ef6f6..20ce4d4 100644
+index 64ef6f6..5112352 100644
 --- a/lib/debug/debug.c
 +++ b/lib/debug/debug.c
 @@ -29,6 +29,8 @@
@@ -72,7 +72,7 @@ index 64ef6f6..20ce4d4 100644
  #include <arch/ops.h>
  #include <platform.h>
  #include <platform/debug.h>
-@@ -83,8 +85,73 @@ void _panic(void *caller, const char *fmt, ...)
+@@ -83,8 +85,70 @@ void _panic(void *caller, const char *fmt, ...)
  	halt();
  }
  
@@ -89,18 +89,13 @@ index 64ef6f6..20ce4d4 100644
 +#define X2_LKLOG_MAX	(100 * 1024)
 +#define X2_LKLOG_MAGIC	0x474F4B4C /* "LKOG" */
 +
-+static void x2_lklog_write(const char *str, size_t len)
++static void x2_lklog_char(char c)
 +{
 +	static bool mapped = false;
 +	volatile uint32_t *hdr;
 +	volatile char *buf;
 +	uint32_t off;
 +
-+	/*
-+	 * 0x915A0000 is not in the default msm8996 MMU table (MEMBASE covers
-+	 * only 0x91D00000+4M, SCRATCH starts at 0x92300000), so map it first -
-+	 * an unmapped write faults and would kill lk2nd itself.
-+	 */
 +	if (!mapped) {
 +		if (!lk2nd_mmu_map_ram_dynamic("x2 lklog", X2_LKLOG_BASE, 0x100000))
 +			return;
@@ -115,14 +110,16 @@ index 64ef6f6..20ce4d4 100644
 +	hdr = (volatile uint32_t *)X2_LKLOG_BASE;
 +	buf = (volatile char *)(X2_LKLOG_BASE + 16);
 +	off = hdr[1];
-+	if (off > X2_LKLOG_MAX)
++	if (off >= X2_LKLOG_MAX)
 +		return;
-+	if (off + len > X2_LKLOG_MAX)
-+		len = X2_LKLOG_MAX - off;
-+
-+	while (len--)
-+		buf[off++] = *str++;
++	buf[off++] = c;
 +	hdr[1] = off;
++}
++
++static void x2_lklog_write(const char *str, size_t len)
++{
++	while (len--)
++		x2_lklog_char(*str++);
 +}
 +
 +static void cmd_oem_lklog(const char *arg, void *data, unsigned sz)
@@ -146,6 +143,14 @@ index 64ef6f6..20ce4d4 100644
  	while(*str != 0) {
  		_dputc(*str++);
  	}
+@@ -94,6 +158,7 @@ int _dputs(const char *str)
+ 
+ static int _dprintf_output_func(char c, void *state)
+ {
++	x2_lklog_char(c);
+ 	_dputc(c);
+ 
+ 	return INT_MAX;
 diff --git a/platform/msm_shared/scm.c b/platform/msm_shared/scm.c
 index 8c76083..4b9e77d 100644
 --- a/platform/msm_shared/scm.c
