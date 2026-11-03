@@ -111,3 +111,55 @@ console-ramoops 全程只含 3.18 旧日志（止于每次进入 bootloader 前�
   dtb_offset=0，扫描从偏移 0 开始 → 修复：gzip 打包
 - v2（gzip 版）：`Booting OKAY` 后设备挂死（PSCI 复位未生效）→ 数据预计已写入
   0x915A0000，等强制重启读回。已给 v3 加 KPSS 看门狗自恢复（5s 必复位）。
+
+---
+
+## 2026-11-03 下午：彻底突破与真正的根因链
+
+### 最终确认的 9 个 lk2nd 根因（全部已在 lk2nd-patches/ 修复）
+
+1. LPAE `platform_get_phys_to_virt_mapping()` 反查页表 → 内核装到 0x40008000（lk2nd 自身）
+2. 低 512MB 映射为 device/XN → 关 MMU 后取指失败
+3. **DDR 窗口（0x80000000+）完全没有映射** → tags/ramdisk/kernel 写入静默失败
+4. **tags_addr(0x82500000) 落在内核镜像范围内** → 内核 memmove 覆盖 DTB
+5. `copy_dtb()` 在 dt_size==0 时返回"成功" → 跳过 appended-DTB 路径
+6. `decompress()` 的 pos 比真实 gzip 结尾少 2 字节
+7. DTB 反向扫描步长 4 错过未对齐的 DTB（实际偏移 14992613 不是 4 的倍数）
+8. 单 DTB 兜底分支用 blob 末尾算 size → 复制几十 MB 垃圾
+9. volume-up 映射到 pm8994 gpio3（应为 gpio2）→ 每次开机误进 recovery
+
+### 屏幕诊断（无 UART 时的唯一观测手段）
+
+lk2nd 在 boot_linux 各阶段把状态画到面板底部（`x2_screen_line`/`x2_screen_hex`）。
+实测显示：
+```
+x2: boot_linux entered
+arm64 kernel
+platform uninit done
+elr: 80000000
+x0: 83000000
+```
+→ 参数完全正确，但随后**卡在 `smc #0`**：LeEco 的 TZ 不接受 lk2nd 的
+`MILESTONE_32_64`（svc 0x1 / cmd 0xf）调用，收下后既不返回也不跳转。
+
+### 原厂 aboot 逆向（aboot.img 是 ELF32/EM_ARM，入口 0x91600000）
+
+反汇编确认原厂 SCM wrapper（0x9161be84）与 lk2nd `scm_call_a32` 完全一致：
+```asm
+push {r4,r5,r6,fp,lr}; ...; mov r6,#0; smc #0; cmp r0,#1; beq retry
+```
+即 SCM 通道本身没问题，差异在 milestone 参数/TZ 实现。
+
+### 决定性转向：改用原厂 LK 直接引导内核
+
+原厂 LK 每天都在引导 64 位 3.18 内核，它的 32→64 切换是验证过的。
+用修好的 DTB（console=serial@75b0000、ramoops@91500000）在**原厂 LK** 上
+`fastboot boot` 的结果：`Booting OKAY`，180 秒无复位 —— 但屏幕仍停在原厂
+LK 界面，说明内核未接手（不是崩溃）。
+
+### 新发现的关键配置 bug
+
+fork 的 defconfig 里 **`CONFIG_USB_CONFIGFS=m`**：
+- 设备没有 rootfs → 模块永不加载 → USB gadget 永不出现
+- initramfs 设计的 USB ACM shell 因此完全没机会工作
+- 已在 kernel.yml / initramfs.yml 强制 `USB_DWC3/USB_CONFIGFS/ACM/DEVTMPFS/INITRD` 全 `=y`
