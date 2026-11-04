@@ -1,5 +1,5 @@
 diff --git a/app/aboot/aboot.c b/app/aboot/aboot.c
-index b44a5c2..f9f85fa 100644
+index b44a5c2..05deff7 100644
 --- a/app/aboot/aboot.c
 +++ b/app/aboot/aboot.c
 @@ -158,6 +158,8 @@ struct fastboot_cmd_desc {
@@ -86,7 +86,7 @@ index b44a5c2..f9f85fa 100644
  }
  
  /* Function to check if the memory address range falls within the aboot
-@@ -2201,6 +2241,14 @@ int boot_linux_from_mmc(void)
+@@ -2201,8 +2241,20 @@ int boot_linux_from_mmc(void)
  		}
  #endif
  
@@ -100,8 +100,41 @@ index b44a5c2..f9f85fa 100644
 +		}
  		dtb = dev_tree_appended(image_buf, dtb_image_size, dtb_offset,
  				(void *)hdr->tags_addr);
++		{
++			extern void x2_screen_line(int, const char *);
++			x2_screen_line(10, dtb ? "MMC: dtb OK" : "MMC: dtb FAIL");
++		}
  		if (!dtb) {
-@@ -3074,6 +3122,17 @@ int copy_dtb(uint8_t *boot_image_start, unsigned int scratch_offset)
+ 			dprintf(CRITICAL, "ERROR: Appended Device Tree Blob not found\n");
+ #if WITH_LK2ND_DEVICE_2ND
+@@ -2216,14 +2268,26 @@ int boot_linux_from_mmc(void)
+ 	#endif
+ 
+ 	/* Move kernel, ramdisk and device tree to correct address */
++	{
++		extern void x2_screen_line(int, const char *);
++		x2_screen_line(11, "MMC: moving kernel+ramdisk");
++	}
+ 	memmove((void*) hdr->kernel_addr, kernel_start_addr, kernel_size);
+ 	memmove((void*) hdr->ramdisk_addr, (char *)(image_addr + page_size + kernel_actual), hdr->ramdisk_size);
++	{
++		extern void x2_screen_line(int, const char *);
++		x2_screen_line(12, "MMC: moved OK");
++	}
+ 
+ 	if (boot_into_recovery && !device.is_unlocked && !device.is_tampered)
+ 		target_load_ssd_keystore();
+ 
+ unified_boot:
+ 
++	{
++		extern void x2_screen_line(int, const char *);
++		x2_screen_line(13, "MMC: calling boot_linux");
++	}
+ 	boot_linux((void *)hdr->kernel_addr, (void *)hdr->tags_addr,
+ 		   (const char *)hdr->cmdline, board_machtype(),
+ 		   (void *)hdr->ramdisk_addr, hdr->ramdisk_size,
+@@ -3074,6 +3138,17 @@ int copy_dtb(uint8_t *boot_image_start, unsigned int scratch_offset)
  	dt_size = hdr->dt_size;
  #endif
  
@@ -119,7 +152,7 @@ index b44a5c2..f9f85fa 100644
  	if(dt_size != 0) {
  		/* add kernel offset */
  		dt_image_offset += page_size;
-@@ -3149,6 +3208,55 @@ int copy_dtb(uint8_t *boot_image_start, unsigned int scratch_offset)
+@@ -3149,6 +3224,55 @@ int copy_dtb(uint8_t *boot_image_start, unsigned int scratch_offset)
  }
  #endif
  
@@ -175,7 +208,7 @@ index b44a5c2..f9f85fa 100644
  void cmd_boot(const char *arg, void *data, unsigned sz)
  {
  	unsigned kernel_actual;
-@@ -3441,6 +3549,31 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
+@@ -3441,6 +3565,31 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
  	 */
  	if (!dtb_copied) {
  		void *dtb;
@@ -207,7 +240,7 @@ index b44a5c2..f9f85fa 100644
  		dtb = dev_tree_appended((void*)(ptr + page_size),
  					hdr->kernel_size, dtb_offset,
  					(void *)hdr->tags_addr);
-@@ -3460,6 +3593,15 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
+@@ -3460,6 +3609,15 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
  	memmove((void*) hdr->ramdisk_addr, ptr + page_size + kernel_actual, hdr->ramdisk_size);
  	memmove((void*) hdr->kernel_addr, (char*) (kernel_start_addr), kernel_size);
  
@@ -223,7 +256,7 @@ index b44a5c2..f9f85fa 100644
  	fastboot_okay("");
  	fastboot_stop();
  
-@@ -3469,6 +3611,7 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
+@@ -3469,6 +3627,7 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
  	thread_sleep(LK2ND_FASTBOOT_DELAY);
  	#endif
  
@@ -231,7 +264,7 @@ index b44a5c2..f9f85fa 100644
  	boot_linux((void*) hdr->kernel_addr, (void*) hdr->tags_addr,
  		   (const char*) hdr->cmdline, board_machtype(),
  		   (void*) hdr->ramdisk_addr, hdr->ramdisk_size,
-@@ -3491,8 +3634,7 @@ void cmd_erase_nand(const char *arg, void *data, unsigned sz)
+@@ -3491,8 +3650,7 @@ void cmd_erase_nand(const char *arg, void *data, unsigned sz)
  
  	ptable = flash_get_ptable();
  	if (ptable == NULL) {
