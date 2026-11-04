@@ -1,5 +1,5 @@
 diff --git a/app/aboot/aboot.c b/app/aboot/aboot.c
-index b44a5c2..05deff7 100644
+index b44a5c2..366b5df 100644
 --- a/app/aboot/aboot.c
 +++ b/app/aboot/aboot.c
 @@ -158,6 +158,8 @@ struct fastboot_cmd_desc {
@@ -196,8 +196,8 @@ index b44a5c2..05deff7 100644
 +	if (!fb)
 +		return;
 +	y = (int)fb->height - (13 - row) * 12 * 2;
-+	if (y < 0)
-+		return;
++	if (y < 0 || y >= (int)fb->height)
++		return;	/* row 13+ would write past the framebuffer end */
 +	while (*str) {
 +		fbcon_putc_factor_xy(*str++, 255, 2, x, y);
 +		x += 5 * 2;
