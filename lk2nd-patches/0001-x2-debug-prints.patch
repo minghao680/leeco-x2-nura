@@ -333,7 +333,7 @@ index c8a2cc3..22d414c 100644
  #define ABOOT_FORCE_KERNEL64_ADDR    (DDR_START + 0x80000)
  #endif
 diff --git a/platform/msm8996/platform.c b/platform/msm8996/platform.c
-index 1fc7045..7de0c25 100644
+index 1fc7045..4f3c1ac 100644
 --- a/platform/msm8996/platform.c
 +++ b/platform/msm8996/platform.c
 @@ -67,12 +67,49 @@ static uint64_t ddr_start;
@@ -386,7 +386,7 @@ index 1fc7045..7de0c25 100644
 +	 * the el1_x0/el1_elr values - an unmapped store faults and lk2nd dies
 +	 * before the SCM call is ever issued.
 +	 */
-+	{    0x916C0000,        0x916C0000,       MMU_L2_NS_SECTION_MAPPING,  2,                   LK_MEMORY},
++	{    0x91600000,        0x91600000,       MMU_L2_NS_SECTION_MAPPING,  2,                   LK_MEMORY},
 +	{    MSM_SHARED_BASE,   MSM_SHARED_BASE,  MMU_L2_NS_SECTION_MAPPING,  MSM_SHARED_SIZE,     COMMON_MEMORY},
 +	{    RPMB_SND_RCV_BUF,  RPMB_SND_RCV_BUF, MMU_L2_NS_SECTION_MAPPING,  RPMB_SND_RCV_BUF_SZ, IOMAP_MEMORY},
  };
